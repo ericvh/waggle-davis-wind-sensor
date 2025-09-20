@@ -23,8 +23,6 @@
 - [x] Vector averaging for wind direction (proper circular statistics)
 - [x] Wind direction consistency metrics
 - [x] Wind speed min/max tracking (lull and gust measurements)
-- [x] Tempest weather station calibration integration
-- [x] Web scraping fallback for Tempest data (no API key required)
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
