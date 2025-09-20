@@ -1,0 +1,72 @@
+name: "davis-wind-sensor"
+description: "Davis wind sensor plugin that reads wind data from Arduino via USB serial port and publishes wind speed in knots, direction in degrees, plus debug information"
+version: "1.0.0"
+namespace: "sage"
+keywords: ["davis", "wind", "sensor", "weather", "serial", "anemometer", "arduino"]
+authors: "Waggle Team"
+collaborators: []
+funding: []
+license: "MIT"
+
+sources:
+  - architectures:
+      - "linux/amd64"
+      - "linux/arm64"
+    url: "."
+
+resources:
+  - name: "davis-wind-sensor"
+    type: "job"
+    image: "{image}"
+    command: ["python3", "main.py"]
+    arguments:
+      - "--port=/dev/ttyUSB0"
+      - "--baudrate=9600"
+    env:
+      - name: "PLUGIN_NAME"
+        value: "davis-wind-sensor"
+    privileged: true  # Required for serial port access
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"  # Map serial device
+    
+inputs: []
+outputs:
+  # Primary environmental measurements (WXT-style naming)
+  - name: "env.wind.speed"
+    type: "float"
+    units: "knots"
+    description: "Wind speed in knots"
+  - name: "env.wind.direction"
+    type: "float"
+    units: "degrees"
+    description: "Wind direction in degrees (0-360)"
+  - name: "env.wind.speed.mps"
+    type: "float"
+    units: "m/s"
+    description: "Wind speed in meters per second"
+  
+  # Davis-specific debug measurements
+  - name: "davis.wind.rps"
+    type: "float"
+    units: "rps"
+    description: "Wind sensor rotations per second"
+  - name: "davis.wind.rpm.tops"
+    type: "integer"
+    units: "rpm"
+    description: "Debounced RPM count from Davis sensor"
+  - name: "davis.wind.rpm.raw"
+    type: "integer"
+    units: "rpm"
+    description: "Raw RPM count from Davis sensor"
+  - name: "davis.wind.pot.value"
+    type: "integer"
+    units: "counts"
+    description: "Raw potentiometer value for wind direction"
+  - name: "davis.wind.iteration"
+    type: "integer"
+    units: "count"
+    description: "Arduino iteration counter"
+  - name: "davis.wind.sensor_status"
+    type: "integer"
+    units: "status"
+    description: "Davis wind sensor status (0=error, 1=ok)" 
