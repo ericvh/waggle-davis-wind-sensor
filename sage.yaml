@@ -3,7 +3,7 @@ description: "Davis wind sensor plugin that reads wind data from Arduino via USB
 version: "1.0.0"
 namespace: "sage"
 keywords: ["davis", "wind", "sensor", "weather", "serial", "anemometer", "arduino"]
-authors: "Waggle Team"
+authors: "Eric Van Hensbergen <ericvh@gmail.com>"
 collaborators: []
 funding: []
 license: "MIT"
