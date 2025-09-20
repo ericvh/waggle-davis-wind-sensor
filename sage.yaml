@@ -1,8 +1,32 @@
 name: "davis-wind-sensor"
-description: "Davis wind sensor plugin that reads wind data from Arduino via USB serial port and publishes wind speed in knots, direction in degrees, plus debug information"
+description: >
+  Davis wind sensor plugin for Waggle framework that interfaces with Davis anemometer 
+  and wind vane sensors via Arduino microcontroller. Reads wind speed and direction data 
+  from USB serial port, performs real-time calibration and unit conversion, and publishes 
+  environmental measurements including wind speed in knots, wind direction in degrees, 
+  plus comprehensive debug information with rotations per second and raw sensor values. 
+  Designed for continuous environmental monitoring and meteorological research applications.
 version: "1.0.0"
 namespace: "sage"
 keywords: ["davis", "wind", "sensor", "weather", "serial", "anemometer", "arduino"]
+long_description: >
+  This Waggle plugin provides a comprehensive interface for Davis wind sensor systems,
+  enabling real-time environmental monitoring for meteorological and climate research.
+  The plugin connects to Davis anemometer and wind vane sensors through an Arduino
+  microcontroller interface, reading serial data and performing calibrated measurements.
+  
+  Key features include:
+  - Real-time wind speed measurement in knots and meters per second
+  - Accurate wind direction measurement in degrees (0-360°)
+  - Configurable calibration for both speed and direction
+  - Comprehensive debug output including RPM data and raw sensor values
+  - Continuous data acquisition with automatic error recovery
+  - Multi-architecture Docker support for various deployment platforms
+  
+  The plugin follows Waggle best practices and publishes data using standardized 
+  environmental topic naming conventions for compatibility with existing weather 
+  monitoring infrastructure.
+summary: "Real-time Davis wind sensor monitoring plugin for environmental research"
 authors: 
   - "Eric Van Hensbergen <ericvh@gmail.com>"
 collaborators: []
@@ -29,6 +53,8 @@ app:
   type: "environmental-monitoring"
   category: "weather"
   maturity: "stable"
+  description: "Environmental monitoring application for real-time wind measurement"
+  purpose: "Continuous monitoring of wind conditions for meteorological research"
   
 # Deployment configuration
 deployment:
