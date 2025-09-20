@@ -19,6 +19,9 @@
 - [x] Automated publishing to GitHub Container Registry
 - [x] Code quality testing workflows
 - [x] Optional web monitoring interface with real-time dashboard
+- [x] Configurable interval averaging for environmental data
+- [x] Vector averaging for wind direction (proper circular statistics)
+- [x] Wind direction consistency metrics
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware

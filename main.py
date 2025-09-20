@@ -8,7 +8,7 @@ import serial
 import re
 import json
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from contextlib import contextmanager
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -31,7 +31,9 @@ latest_data = {
     "raw_line": None,
     "status": "starting",
     "error_count": 0,
-    "total_readings": 0
+    "total_readings": 0,
+    "last_mqtt_report": None,
+    "readings_since_report": 0
 }
 
 
@@ -92,7 +94,83 @@ def parse_args():
         default=8080, 
         help="Web server port (default: 8080)"
     )
+    parser.add_argument(
+        "--reporting-interval", 
+        type=int, 
+        default=60, 
+        help="MQTT reporting interval in seconds for averaged data (default: 60)"
+    )
     return parser.parse_args()
+
+
+class WindDataCollector:
+    """Collects wind data over time intervals and calculates averages"""
+    
+    def __init__(self, interval_seconds=60):
+        self.interval_seconds = interval_seconds
+        self.reset_collection()
+    
+    def reset_collection(self):
+        """Reset data collection for a new interval"""
+        self.wind_speeds_mps = []
+        self.wind_directions_deg = []
+        self.wind_speeds_knots = []
+        self.start_time = datetime.now()
+        self.sample_count = 0
+    
+    def add_reading(self, wind_data):
+        """Add a new wind reading to the collection"""
+        self.wind_speeds_mps.append(wind_data['wind_speed_mps'])
+        self.wind_speeds_knots.append(wind_data['wind_speed_knots'])
+        self.wind_directions_deg.append(wind_data['wind_direction_deg'])
+        self.sample_count += 1
+    
+    def should_report(self):
+        """Check if it's time to generate an averaged report"""
+        elapsed = datetime.now() - self.start_time
+        return elapsed.total_seconds() >= self.interval_seconds and self.sample_count > 0
+    
+    def get_averaged_data(self):
+        """Calculate and return averaged wind data"""
+        if self.sample_count == 0:
+            return None
+        
+        # Calculate average wind speed (simple arithmetic mean)
+        avg_speed_mps = sum(self.wind_speeds_mps) / len(self.wind_speeds_mps)
+        avg_speed_knots = sum(self.wind_speeds_knots) / len(self.wind_speeds_knots)
+        
+        # Calculate average wind direction using vector averaging
+        # This properly handles the circular nature of wind direction
+        x_components = [math.cos(math.radians(d)) for d in self.wind_directions_deg]
+        y_components = [math.sin(math.radians(d)) for d in self.wind_directions_deg]
+        
+        avg_x = sum(x_components) / len(x_components)
+        avg_y = sum(y_components) / len(y_components)
+        
+        # Convert back to degrees
+        avg_direction_rad = math.atan2(avg_y, avg_x)
+        avg_direction_deg = math.degrees(avg_direction_rad)
+        
+        # Ensure direction is in 0-360 range
+        if avg_direction_deg < 0:
+            avg_direction_deg += 360
+        
+        # Calculate result magnitude for wind consistency indication
+        result_magnitude = math.sqrt(avg_x * avg_x + avg_y * avg_y)
+        wind_consistency = result_magnitude  # 1.0 = very consistent, 0.0 = highly variable
+        
+        averaged_data = {
+            'avg_wind_speed_mps': avg_speed_mps,
+            'avg_wind_speed_knots': avg_speed_knots, 
+            'avg_wind_direction_deg': avg_direction_deg,
+            'wind_consistency': wind_consistency,
+            'sample_count': self.sample_count,
+            'interval_seconds': self.interval_seconds,
+            'start_time': self.start_time,
+            'end_time': datetime.now()
+        }
+        
+        return averaged_data
 
 
 class WebServerHandler(BaseHTTPRequestHandler):
@@ -212,6 +290,14 @@ class WebServerHandler(BaseHTTPRequestHandler):
                     <div class="metric-label">Iteration</div>
                     <div class="metric-value" id="iteration">--</div>
                 </div>
+                <div class="metric">
+                    <div class="metric-label">Last MQTT Report</div>
+                    <div class="metric-value" id="lastMqttReport">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Readings Since Report</div>
+                    <div class="metric-value" id="readingsSinceReport">--</div>
+                </div>
             </div>
         </div>
         
@@ -241,6 +327,8 @@ class WebServerHandler(BaseHTTPRequestHandler):
                     document.getElementById('status').className = 'metric-value ' + (data.status === 'running' ? 'status-ok' : 'status-error');
                     document.getElementById('totalReadings').textContent = data.total_readings;
                     document.getElementById('errorCount').textContent = data.error_count;
+                    document.getElementById('lastMqttReport').textContent = data.last_mqtt_report ? new Date(data.last_mqtt_report).toLocaleString() : 'Never';
+                    document.getElementById('readingsSinceReport').textContent = data.readings_since_report;
                     document.getElementById('rawData').textContent = data.raw_line || 'No data received yet...';
                     document.getElementById('lastUpdate').textContent = '(Updated: ' + new Date().toLocaleTimeString() + ')';
                 })
@@ -484,6 +572,14 @@ class WebServerHandler(BaseHTTPRequestHandler):
                 <span class="label">Last Data Time:</span>
                 <span class="value">{data_time}</span>
             </div>
+            <div class="measurement">
+                <span class="label">Last MQTT Report:</span>
+                <span class="value">{"Never" if not latest_data["last_mqtt_report"] else latest_data["last_mqtt_report"].strftime("%Y-%m-%d %H:%M:%S")}</span>
+            </div>
+            <div class="measurement">
+                <span class="label">Readings Since Report:</span>
+                <span class="value">{latest_data["readings_since_report"]}</span>
+            </div>
         </div>"""
         
         if latest_data["raw_line"]:
@@ -654,6 +750,10 @@ def main():
     logger.info(f"Wind speed calibration factor: {args.calibration_factor}")
     logger.info(f"Wind direction offset: {args.direction_offset}°")
     logger.info(f"Wind direction scale: {args.direction_scale}")
+    logger.info(f"MQTT reporting interval: {args.reporting_interval} seconds")
+    
+    # Initialize data collector for averaged reporting
+    data_collector = WindDataCollector(args.reporting_interval)
     
     # Start web server if requested
     if args.web_server:
@@ -666,6 +766,7 @@ def main():
         logger.info(f"Web monitoring enabled on port {args.web_port}")
     
     logger.info("Waiting for data from Davis wind sensor...")
+    logger.info(f"Environmental data will be averaged and published every {args.reporting_interval} seconds")
     
     try:
         # Update global status
@@ -695,21 +796,15 @@ def main():
                                 wind_data = wind_reader.parse_wind_data(line)
                                 
                                 if wind_data:
-                                    # Update global data for web server
+                                    # Update global data for web server (immediate/real-time)
                                     latest_data["wind_data"] = wind_data
                                     latest_data["total_readings"] += 1
+                                    latest_data["readings_since_report"] += 1
                                     
-                                    # Primary measurements using WXT-style topic naming
-                                    plugin.publish("env.wind.speed", wind_data['wind_speed_knots'], 
-                                                 meta={"units": "knots", "description": "Wind speed in knots"})
-                                    plugin.publish("env.wind.direction", wind_data['wind_direction_deg'], 
-                                                 meta={"units": "degrees", "description": "Wind direction in degrees"})
+                                    # Add reading to data collector for averaging
+                                    data_collector.add_reading(wind_data)
                                     
-                                    # Additional measurements 
-                                    plugin.publish("env.wind.speed.mps", wind_data['wind_speed_mps'], 
-                                                 meta={"units": "m/s", "description": "Wind speed in meters per second"})
-                                    
-                                    # Debug measurements - Davis-specific data
+                                    # Immediate debug measurements - Davis-specific data (for web interface)
                                     plugin.publish("davis.wind.rps", wind_data['rotations_per_second'], 
                                                  meta={"units": "rps", "description": "Wind sensor rotations per second"})
                                     plugin.publish("davis.wind.rpm.tops", wind_data['rpm_tops'], 
@@ -721,12 +816,40 @@ def main():
                                     plugin.publish("davis.wind.iteration", wind_data['iteration'], 
                                                  meta={"units": "count", "description": "Arduino iteration counter"})
                                     
-                                    # Publish sensor status as OK
+                                    # Publish immediate sensor status as OK
                                     plugin.publish("davis.wind.sensor_status", 1, 
                                                  meta={"description": "Davis wind sensor status (0=error, 1=ok)"})
                                     
-                                    logger.info(f"Wind: {wind_data['wind_speed_knots']:.2f} knots, "
-                                               f"{wind_data['wind_direction_deg']:.1f}°")
+                                    # Check if it's time to publish averaged environmental data
+                                    if data_collector.should_report():
+                                        averaged_data = data_collector.get_averaged_data()
+                                        if averaged_data:
+                                            # Publish averaged environmental measurements
+                                            plugin.publish("env.wind.speed", averaged_data['avg_wind_speed_knots'], 
+                                                         meta={"units": "knots", "description": "Average wind speed in knots", "interval_seconds": averaged_data['interval_seconds'], "sample_count": averaged_data['sample_count']})
+                                            plugin.publish("env.wind.direction", averaged_data['avg_wind_direction_deg'], 
+                                                         meta={"units": "degrees", "description": "Average wind direction in degrees", "interval_seconds": averaged_data['interval_seconds'], "sample_count": averaged_data['sample_count']})
+                                            plugin.publish("env.wind.speed.mps", averaged_data['avg_wind_speed_mps'], 
+                                                         meta={"units": "m/s", "description": "Average wind speed in meters per second", "interval_seconds": averaged_data['interval_seconds'], "sample_count": averaged_data['sample_count']})
+                                            
+                                            # Additional averaged metrics
+                                            plugin.publish("env.wind.consistency", averaged_data['wind_consistency'], 
+                                                         meta={"units": "ratio", "description": "Wind direction consistency (1.0=steady, 0.0=highly variable)", "interval_seconds": averaged_data['interval_seconds'], "sample_count": averaged_data['sample_count']})
+                                            
+                                            latest_data["last_mqtt_report"] = datetime.now()
+                                            latest_data["readings_since_report"] = 0
+                                            
+                                            logger.info(f"Published averaged data: {averaged_data['avg_wind_speed_knots']:.2f} knots, "
+                                                       f"{averaged_data['avg_wind_direction_deg']:.1f}° "
+                                                       f"(samples: {averaged_data['sample_count']}, consistency: {averaged_data['wind_consistency']:.3f})")
+                                            
+                                            # Reset collector for next interval
+                                            data_collector.reset_collection()
+                                    
+                                    # Log individual reading for debugging/monitoring
+                                    logger.debug(f"Reading: {wind_data['wind_speed_knots']:.2f} knots, "
+                                               f"{wind_data['wind_direction_deg']:.1f}° "
+                                               f"(samples in interval: {data_collector.sample_count})")
                                     
                                     if args.debug:
                                         logger.debug(f"Debug - Iteration: {wind_data['iteration']}, "

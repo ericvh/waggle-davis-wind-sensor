@@ -1,5 +1,5 @@
 name: "davis-wind-sensor"
-description: "Davis wind sensor plugin for Waggle framework that interfaces with Davis anemometer and wind vane sensors via Arduino microcontroller. Reads wind speed and direction data from USB serial port, performs real-time calibration and unit conversion, and publishes environmental measurements including wind speed in knots, wind direction in degrees, plus comprehensive debug information with rotations per second and raw sensor values. Designed for continuous environmental monitoring and meteorological research applications."
+description: "Davis wind sensor plugin for Waggle framework that interfaces with Davis anemometer and wind vane sensors via Arduino microcontroller. Reads wind speed and direction data from USB serial port, performs configurable interval averaging with proper circular statistics for wind direction, and publishes meteorologically accurate environmental measurements including averaged wind speed in knots, vector-averaged wind direction in degrees, and wind consistency metrics. Features real-time calibration, unit conversion, and comprehensive debug information with rotations per second and raw sensor values. Designed for continuous environmental monitoring and meteorological research applications."
 version: "1.0.0"
 namespace: "sage"
 keywords: ["davis", "wind", "sensor", "weather", "serial", "anemometer", "arduino"]
@@ -67,6 +67,7 @@ resources:
     arguments:
       - "--port=/dev/ttyUSB0"
       - "--baudrate=9600"
+      - "--reporting-interval=60"
     env:
       - name: "PLUGIN_NAME"
         value: "davis-wind-sensor"
@@ -126,6 +127,13 @@ outputs:
     sensor_name: "Davis Anemometer"
     sampling_rate: "1Hz"
     range: "0-77"
+  - name: "env.wind.consistency"
+    type: "float"
+    units: "ratio"
+    description: "Wind direction consistency metric (1.0=steady, 0.0=highly variable)"
+    sensor_name: "Davis Wind Vane"
+    sampling_rate: "configurable"
+    range: "0-1"
   
   # Davis-specific debug measurements
   - name: "davis.wind.rps"

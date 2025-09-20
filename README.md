@@ -16,6 +16,8 @@ A Waggle plugin that reads Davis wind sensor data from Arduino via USB serial po
   - Raw and debounced RPM values
   - Raw potentiometer readings
   - Arduino iteration counter
+- **Data Averaging**: Configurable interval averaging with proper circular statistics for wind direction
+- **Dual-Mode Reporting**: Real-time debug data + averaged environmental measurements
 - **Continuous Data Processing**: Blocks waiting for new data instead of polling on intervals for maximum responsiveness
 - **Web Monitoring Interface**: Optional built-in web server with real-time dashboard and JSON API
 - **Robust Serial Communication**: Includes error handling, automatic reconnection, and buffer management
@@ -28,9 +30,10 @@ The plugin publishes the following measurements:
 ### Primary Environmental Data (WXT-compatible)
 | Measurement | Units | Description |
 |-------------|-------|-------------|
-| `env.wind.speed` | knots | Wind speed in knots |
-| `env.wind.direction` | degrees | Wind direction (0-360°) |
-| `env.wind.speed.mps` | m/s | Wind speed in meters per second |
+| `env.wind.speed` | knots | Averaged wind speed in knots |
+| `env.wind.direction` | degrees | Vector-averaged wind direction (0-360°) |
+| `env.wind.speed.mps` | m/s | Averaged wind speed in meters per second |
+| `env.wind.consistency` | ratio | Wind direction consistency (1.0=steady, 0.0=highly variable) |
 
 ### Davis-Specific Debug Data
 | Measurement | Units | Description |
@@ -74,6 +77,58 @@ The plugin uses **continuous blocking reads** instead of polling intervals:
 - **Reliability**: Automatic reconnection on serial port errors
 
 This approach ensures maximum responsiveness and efficient use of system resources.
+
+## Data Averaging and Reporting
+
+The plugin implements a **dual-mode data system** for optimal meteorological data quality:
+
+### Environmental Data (MQTT) - Averaged Reports
+- **Reporting Interval**: Configurable (default: 60 seconds)
+- **Wind Speed**: Arithmetic average of all readings during interval
+- **Wind Direction**: Vector-averaged using circular statistics to properly handle direction wrap-around
+- **Wind Consistency**: Measures direction variability (1.0 = perfectly steady, 0.0 = completely variable)
+- **Quality Metadata**: Each published value includes sample count and interval duration
+
+### Debug Data (Real-time) - Individual Readings  
+- **RPM Values**: Published immediately for each reading
+- **Raw Sensor Data**: Potentiometer values, iteration counters
+- **System Status**: Connection health, error tracking
+
+### Vector Averaging for Wind Direction
+
+Wind direction averaging uses proper circular statistics:
+
+1. **Convert to Vectors**: Each direction becomes a unit vector (cos θ, sin θ)
+2. **Average Vectors**: Calculate mean of x and y components
+3. **Convert Back**: Use atan2 to get averaged direction
+4. **Consistency Metric**: Vector magnitude indicates how consistent the wind direction was
+
+**Example**: Directions 350° and 10° average to 0° (not 180° as with arithmetic mean)
+
+### Benefits
+
+- **Meteorological Accuracy**: Proper circular averaging for wind direction
+- **Reduced Noise**: Averaged data filters out sensor fluctuations
+- **Quality Indicators**: Consistency metrics help assess data reliability
+- **Real-time Monitoring**: Web interface shows individual readings
+- **Configurable Intervals**: Adjust averaging period for your application
+
+### Usage Examples
+
+**Default 60-second averaging:**
+```bash
+python3 main.py --web-server
+```
+
+**Custom 5-minute averaging:**
+```bash
+python3 main.py --reporting-interval 300
+```
+
+**High-frequency 10-second reports:**
+```bash
+python3 main.py --reporting-interval 10
+```
 
 ## Web Monitoring Interface
 
@@ -180,6 +235,7 @@ python3 main.py [options]
 - `--calibration-factor` : Wind speed calibration factor (default: `1.0`)
 - `--direction-offset` : Wind direction offset in degrees (default: `0.0`)
 - `--direction-scale` : Wind direction scaling factor (default: `1.0`)
+- `--reporting-interval` : MQTT reporting interval in seconds for averaged data (default: `60`)
 - `--web-server` : Enable mini web server for monitoring
 - `--web-port` : Web server port (default: `8080`)
 - `--debug` : Enable debug output
