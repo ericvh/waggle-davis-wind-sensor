@@ -117,12 +117,26 @@ class WindDataCollector:
         self.wind_speeds_knots = []
         self.start_time = datetime.now()
         self.sample_count = 0
+        self.min_speed_knots = float('inf')
+        self.max_speed_knots = 0.0
+        self.min_speed_mps = float('inf')
+        self.max_speed_mps = 0.0
     
     def add_reading(self, wind_data):
         """Add a new wind reading to the collection"""
         self.wind_speeds_mps.append(wind_data['wind_speed_mps'])
         self.wind_speeds_knots.append(wind_data['wind_speed_knots'])
         self.wind_directions_deg.append(wind_data['wind_direction_deg'])
+        
+        # Track min/max wind speeds
+        speed_knots = wind_data['wind_speed_knots']
+        speed_mps = wind_data['wind_speed_mps']
+        
+        self.min_speed_knots = min(self.min_speed_knots, speed_knots)
+        self.max_speed_knots = max(self.max_speed_knots, speed_knots)
+        self.min_speed_mps = min(self.min_speed_mps, speed_mps)
+        self.max_speed_mps = max(self.max_speed_mps, speed_mps)
+        
         self.sample_count += 1
     
     def should_report(self):
@@ -159,11 +173,20 @@ class WindDataCollector:
         result_magnitude = math.sqrt(avg_x * avg_x + avg_y * avg_y)
         wind_consistency = result_magnitude  # 1.0 = very consistent, 0.0 = highly variable
         
+        # Handle edge case where no valid readings were collected
+        if self.min_speed_knots == float('inf'):
+            self.min_speed_knots = 0.0
+            self.min_speed_mps = 0.0
+        
         averaged_data = {
             'avg_wind_speed_mps': avg_speed_mps,
             'avg_wind_speed_knots': avg_speed_knots, 
             'avg_wind_direction_deg': avg_direction_deg,
             'wind_consistency': wind_consistency,
+            'min_wind_speed_knots': self.min_speed_knots,
+            'max_wind_speed_knots': self.max_speed_knots,
+            'min_wind_speed_mps': self.min_speed_mps,
+            'max_wind_speed_mps': self.max_speed_mps,
             'sample_count': self.sample_count,
             'interval_seconds': self.interval_seconds,
             'start_time': self.start_time,
@@ -250,6 +273,14 @@ class WebServerHandler(BaseHTTPRequestHandler):
                     <div class="metric-label">Speed (m/s)</div>
                     <div class="metric-value" id="windSpeedMps">-- m/s</div>
                 </div>
+                <div class="metric">
+                    <div class="metric-label">Min Speed (Lull)</div>
+                    <div class="metric-value" id="windSpeedMin">-- knots</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Max Speed (Gust)</div>
+                    <div class="metric-value" id="windSpeedMax">-- knots</div>
+                </div>
             </div>
             
             <div class="card">
@@ -316,6 +347,15 @@ class WebServerHandler(BaseHTTPRequestHandler):
                         document.getElementById('windSpeed').textContent = data.wind_data.wind_speed_knots.toFixed(2) + ' knots';
                         document.getElementById('windDirection').textContent = data.wind_data.wind_direction_deg.toFixed(1) + '°';
                         document.getElementById('windSpeedMps').textContent = data.wind_data.wind_speed_mps.toFixed(2) + ' m/s';
+                        
+                        // Update min/max values if available
+                        if (data.wind_data.min_wind_speed_knots !== undefined) {
+                            document.getElementById('windSpeedMin').textContent = data.wind_data.min_wind_speed_knots.toFixed(2) + ' knots';
+                            document.getElementById('windSpeedMax').textContent = data.wind_data.max_wind_speed_knots.toFixed(2) + ' knots';
+                        } else {
+                            document.getElementById('windSpeedMin').textContent = '-- knots';
+                            document.getElementById('windSpeedMax').textContent = '-- knots';
+                        }
                         document.getElementById('rpmTops').textContent = data.wind_data.rpm_tops;
                         document.getElementById('rpmRaw').textContent = data.wind_data.rpm_raw;
                         document.getElementById('rps').textContent = data.wind_data.rotations_per_second.toFixed(3);
@@ -508,6 +548,18 @@ class WebServerHandler(BaseHTTPRequestHandler):
             <div class="measurement">
                 <span class="label">Rotations per Second:</span>
                 <span class="value">{wind_data['rotations_per_second']:.3f} RPS</span>
+            </div>"""
+            
+            # Add min/max wind speeds if available
+            if 'min_wind_speed_knots' in wind_data:
+                html_content += f"""
+            <div class="measurement">
+                <span class="label">Min Speed (Lull):</span>
+                <span class="value">{wind_data['min_wind_speed_knots']:.2f} knots</span>
+            </div>
+            <div class="measurement">
+                <span class="label">Max Speed (Gust):</span>
+                <span class="value">{wind_data['max_wind_speed_knots']:.2f} knots</span>
             </div>"""
         else:
             html_content += """
@@ -832,6 +884,16 @@ def main():
                                             plugin.publish("env.wind.speed.mps", averaged_data['avg_wind_speed_mps'], 
                                                          meta={"units": "m/s", "description": "Average wind speed in meters per second", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
                                             
+                                            # Wind speed min/max (lull and gust)
+                                            plugin.publish("env.wind.speed.min", averaged_data['min_wind_speed_knots'], 
+                                                         meta={"units": "knots", "description": "Minimum wind speed (lull) during interval", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
+                                            plugin.publish("env.wind.speed.max", averaged_data['max_wind_speed_knots'], 
+                                                         meta={"units": "knots", "description": "Maximum wind speed (gust) during interval", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
+                                            plugin.publish("env.wind.speed.min.mps", averaged_data['min_wind_speed_mps'], 
+                                                         meta={"units": "m/s", "description": "Minimum wind speed (lull) in m/s during interval", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
+                                            plugin.publish("env.wind.speed.max.mps", averaged_data['max_wind_speed_mps'], 
+                                                         meta={"units": "m/s", "description": "Maximum wind speed (gust) in m/s during interval", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
+                                            
                                             # Additional averaged metrics
                                             plugin.publish("env.wind.consistency", averaged_data['wind_consistency'], 
                                                          meta={"units": "ratio", "description": "Wind direction consistency (1.0=steady, 0.0=highly variable)", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
@@ -839,7 +901,8 @@ def main():
                                             latest_data["last_mqtt_report"] = datetime.now()
                                             latest_data["readings_since_report"] = 0
                                             
-                                            logger.info(f"Published averaged data: {averaged_data['avg_wind_speed_knots']:.2f} knots, "
+                                            logger.info(f"Published averaged data: {averaged_data['avg_wind_speed_knots']:.2f} knots "
+                                                       f"(min: {averaged_data['min_wind_speed_knots']:.2f}, max: {averaged_data['max_wind_speed_knots']:.2f}), "
                                                        f"{averaged_data['avg_wind_direction_deg']:.1f}° "
                                                        f"(samples: {averaged_data['sample_count']}, consistency: {averaged_data['wind_consistency']:.3f})")
                                             

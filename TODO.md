@@ -22,6 +22,7 @@
 - [x] Configurable interval averaging for environmental data
 - [x] Vector averaging for wind direction (proper circular statistics)
 - [x] Wind direction consistency metrics
+- [x] Wind speed min/max tracking (lull and gust measurements)
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware

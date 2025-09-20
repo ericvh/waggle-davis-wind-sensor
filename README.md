@@ -17,6 +17,7 @@ A Waggle plugin that reads Davis wind sensor data from Arduino via USB serial po
   - Raw potentiometer readings
   - Arduino iteration counter
 - **Data Averaging**: Configurable interval averaging with proper circular statistics for wind direction
+- **Min/Max Tracking**: Wind speed lull and gust measurements during each averaging interval
 - **Dual-Mode Reporting**: Real-time debug data + averaged environmental measurements
 - **Continuous Data Processing**: Blocks waiting for new data instead of polling on intervals for maximum responsiveness
 - **Web Monitoring Interface**: Optional built-in web server with real-time dashboard and JSON API
@@ -33,6 +34,10 @@ The plugin publishes the following measurements:
 | `env.wind.speed` | knots | Averaged wind speed in knots |
 | `env.wind.direction` | degrees | Vector-averaged wind direction (0-360°) |
 | `env.wind.speed.mps` | m/s | Averaged wind speed in meters per second |
+| `env.wind.speed.min` | knots | Minimum wind speed (lull) during interval |
+| `env.wind.speed.max` | knots | Maximum wind speed (gust) during interval |
+| `env.wind.speed.min.mps` | m/s | Minimum wind speed (lull) in m/s during interval |
+| `env.wind.speed.max.mps` | m/s | Maximum wind speed (gust) in m/s during interval |
 | `env.wind.consistency` | ratio | Wind direction consistency (1.0=steady, 0.0=highly variable) |
 
 ### Davis-Specific Debug Data
@@ -85,6 +90,7 @@ The plugin implements a **dual-mode data system** for optimal meteorological dat
 ### Environmental Data (MQTT) - Averaged Reports
 - **Reporting Interval**: Configurable (default: 60 seconds)
 - **Wind Speed**: Arithmetic average of all readings during interval
+- **Wind Speed Min/Max**: Minimum (lull) and maximum (gust) wind speeds during interval
 - **Wind Direction**: Vector-averaged using circular statistics to properly handle direction wrap-around
 - **Wind Consistency**: Measures direction variability (1.0 = perfectly steady, 0.0 = completely variable)
 - **Quality Metadata**: Each published value includes sample count and interval duration
