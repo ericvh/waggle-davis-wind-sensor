@@ -1,8 +1,7 @@
-FROM waggle/plugin-base:1.1.1-ml
+FROM waggle/plugin-base:1.1.1-base
 
 # Install system dependencies for serial communication
 RUN apt-get update && apt-get install -y \
-    udev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
