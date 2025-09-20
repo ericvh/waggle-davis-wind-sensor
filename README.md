@@ -17,6 +17,7 @@ A Waggle plugin that reads Davis wind sensor data from Arduino via USB serial po
   - Raw potentiometer readings
   - Arduino iteration counter
 - **Continuous Data Processing**: Blocks waiting for new data instead of polling on intervals for maximum responsiveness
+- **Web Monitoring Interface**: Optional built-in web server with real-time dashboard and JSON API
 - **Robust Serial Communication**: Includes error handling, automatic reconnection, and buffer management
 - **Configurable Parameters**: Serial port, baud rate, wind speed and direction calibration factors
 
@@ -74,6 +75,66 @@ The plugin uses **continuous blocking reads** instead of polling intervals:
 
 This approach ensures maximum responsiveness and efficient use of system resources.
 
+## Web Monitoring Interface
+
+The plugin includes an optional built-in web server that provides real-time monitoring of wind sensor data through a responsive web dashboard.
+
+### Features
+
+- **Real-time Dashboard**: Live updates of wind speed, direction, and debug data
+- **Responsive Design**: Works on desktop, tablet, and mobile devices
+- **Auto-refresh**: Automatic updates every 5 seconds (can be toggled)
+- **JSON API**: RESTful endpoints for programmatic access
+- **Status Monitoring**: System status, error counts, and connection health
+- **Raw Data View**: See the actual serial data received from Arduino
+
+### Usage
+
+**Enable web server:**
+```bash
+python3 main.py --web-server
+```
+
+**Custom port:**
+```bash
+python3 main.py --web-server --web-port 9090
+```
+
+**With Docker:**
+```bash
+docker run -p 8080:8080 --device=/dev/ttyUSB0:/dev/ttyUSB0 --privileged \
+  ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:latest \
+  --web-server --web-port 8080
+```
+
+### Web Endpoints
+
+- **Dashboard**: `http://localhost:8080/` - Interactive web interface
+- **JSON Data**: `http://localhost:8080/api/data` - Complete data as JSON
+- **Status Only**: `http://localhost:8080/api/status` - System status information
+
+### API Response Format
+
+```json
+{
+  "timestamp": "2024-01-15T10:30:45.123456",
+  "status": "running",
+  "total_readings": 1234,
+  "error_count": 0,
+  "raw_line": "wind: 156 512 45 48",
+  "wind_data": {
+    "iteration": 156,
+    "wind_speed_knots": 8.76,
+    "wind_direction_deg": 180.0,
+    "wind_speed_mps": 4.51,
+    "rotations_per_second": 0.75,
+    "rpm_tops": 45,
+    "rpm_raw": 48,
+    "pot_value": 512
+  }
+}
+```
+
 ## Automated Builds
 
 The repository includes GitHub Actions that automatically:
@@ -105,6 +166,8 @@ python3 main.py [options]
 - `--calibration-factor` : Wind speed calibration factor (default: `1.0`)
 - `--direction-offset` : Wind direction offset in degrees (default: `0.0`)
 - `--direction-scale` : Wind direction scaling factor (default: `1.0`)
+- `--web-server` : Enable mini web server for monitoring
+- `--web-port` : Web server port (default: `8080`)
 - `--debug` : Enable debug output
 - `--help` : Show help message
 
@@ -138,6 +201,11 @@ python3 main.py --direction-offset -30.0
 **Scale potentiometer range (if it only covers 270° instead of 360°):**
 ```bash
 python3 main.py --direction-scale 1.333
+```
+
+**Enable web monitoring interface:**
+```bash
+python3 main.py --web-server --web-port 8080
 ```
 
 ## Docker Deployment

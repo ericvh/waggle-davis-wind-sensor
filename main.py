@@ -6,7 +6,12 @@ import math
 import time
 import serial
 import re
+import json
+import threading
+from datetime import datetime
 from contextlib import contextmanager
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
 from waggle.plugin import Plugin
 
 
@@ -18,6 +23,16 @@ MPS_TO_KNOTS = 1.94384  # meters per second to knots conversion factor
 # This factor may need adjustment based on your specific Davis anemometer model
 # Common Davis anemometers use cup sizes that result in this conversion factor
 DEFAULT_RPM_TO_MPS = 0.098
+
+# Global data storage for web server
+latest_data = {
+    "timestamp": None,
+    "wind_data": None,
+    "raw_line": None,
+    "status": "starting",
+    "error_count": 0,
+    "total_readings": 0
+}
 
 
 def parse_args():
@@ -66,7 +81,245 @@ def parse_args():
         default=1.0, 
         help="Wind direction scaling factor (default: 1.0)"
     )
+    parser.add_argument(
+        "--web-server", 
+        action="store_true", 
+        help="Enable mini web server for monitoring"
+    )
+    parser.add_argument(
+        "--web-port", 
+        type=int, 
+        default=8080, 
+        help="Web server port (default: 8080)"
+    )
     return parser.parse_args()
+
+
+class WebServerHandler(BaseHTTPRequestHandler):
+    """HTTP request handler for the monitoring web server"""
+    
+    def log_message(self, format, *args):
+        """Override to suppress default logging"""
+        pass
+    
+    def do_GET(self):
+        """Handle GET requests"""
+        parsed_path = urlparse(self.path)
+        
+        if parsed_path.path == '/':
+            self.serve_dashboard()
+        elif parsed_path.path == '/api/data':
+            self.serve_json_data()
+        elif parsed_path.path == '/api/status':
+            self.serve_status()
+        else:
+            self.send_error(404, "Not Found")
+    
+    def serve_dashboard(self):
+        """Serve the main HTML dashboard"""
+        html_content = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Davis Wind Sensor Monitor</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { background-color: #2c3e50; color: white; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+        .card { background-color: white; padding: 20px; margin: 10px 0; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .metric { display: inline-block; margin: 10px 20px 10px 0; }
+        .metric-label { font-size: 14px; color: #666; }
+        .metric-value { font-size: 24px; font-weight: bold; color: #2c3e50; }
+        .debug-data { font-family: monospace; background-color: #f8f9fa; padding: 10px; border-radius: 3px; }
+        .status-ok { color: #27ae60; }
+        .status-error { color: #e74c3c; }
+        .auto-refresh { margin: 10px 0; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌪️ Davis Wind Sensor Monitor</h1>
+            <p>Real-time wind measurements and debug information</p>
+        </div>
+        
+        <div class="card">
+            <div class="auto-refresh">
+                <label><input type="checkbox" id="autoRefresh" checked> Auto-refresh (5s)</label>
+                <button onclick="refreshData()">Refresh Now</button>
+                <span id="lastUpdate"></span>
+            </div>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <h2>Environmental Measurements</h2>
+                <div class="metric">
+                    <div class="metric-label">Wind Speed</div>
+                    <div class="metric-value" id="windSpeed">-- knots</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Wind Direction</div>
+                    <div class="metric-value" id="windDirection">-- °</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Speed (m/s)</div>
+                    <div class="metric-value" id="windSpeedMps">-- m/s</div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Debug Information</h2>
+                <div class="metric">
+                    <div class="metric-label">RPM (Debounced)</div>
+                    <div class="metric-value" id="rpmTops">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">RPM (Raw)</div>
+                    <div class="metric-value" id="rpmRaw">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Rotations/Sec</div>
+                    <div class="metric-value" id="rps">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Pot Value</div>
+                    <div class="metric-value" id="potValue">--</div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>System Status</h2>
+                <div class="metric">
+                    <div class="metric-label">Status</div>
+                    <div class="metric-value" id="status">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Total Readings</div>
+                    <div class="metric-value" id="totalReadings">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Error Count</div>
+                    <div class="metric-value" id="errorCount">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Iteration</div>
+                    <div class="metric-value" id="iteration">--</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Raw Serial Data</h2>
+            <div class="debug-data" id="rawData">No data received yet...</div>
+        </div>
+    </div>
+
+    <script>
+        function refreshData() {
+            fetch('/api/data')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.wind_data) {
+                        document.getElementById('windSpeed').textContent = data.wind_data.wind_speed_knots.toFixed(2) + ' knots';
+                        document.getElementById('windDirection').textContent = data.wind_data.wind_direction_deg.toFixed(1) + '°';
+                        document.getElementById('windSpeedMps').textContent = data.wind_data.wind_speed_mps.toFixed(2) + ' m/s';
+                        document.getElementById('rpmTops').textContent = data.wind_data.rpm_tops;
+                        document.getElementById('rpmRaw').textContent = data.wind_data.rpm_raw;
+                        document.getElementById('rps').textContent = data.wind_data.rotations_per_second.toFixed(3);
+                        document.getElementById('potValue').textContent = data.wind_data.pot_value;
+                        document.getElementById('iteration').textContent = data.wind_data.iteration;
+                    }
+                    
+                    document.getElementById('status').textContent = data.status;
+                    document.getElementById('status').className = 'metric-value ' + (data.status === 'running' ? 'status-ok' : 'status-error');
+                    document.getElementById('totalReadings').textContent = data.total_readings;
+                    document.getElementById('errorCount').textContent = data.error_count;
+                    document.getElementById('rawData').textContent = data.raw_line || 'No data received yet...';
+                    document.getElementById('lastUpdate').textContent = '(Updated: ' + new Date().toLocaleTimeString() + ')';
+                })
+                .catch(error => {
+                    console.error('Error fetching data:', error);
+                    document.getElementById('status').textContent = 'Connection Error';
+                    document.getElementById('status').className = 'metric-value status-error';
+                });
+        }
+        
+        // Auto-refresh functionality
+        let refreshInterval;
+        function startAutoRefresh() {
+            refreshInterval = setInterval(refreshData, 5000);
+        }
+        
+        function stopAutoRefresh() {
+            clearInterval(refreshInterval);
+        }
+        
+        document.getElementById('autoRefresh').addEventListener('change', function() {
+            if (this.checked) {
+                startAutoRefresh();
+            } else {
+                stopAutoRefresh();
+            }
+        });
+        
+        // Initial load and start auto-refresh
+        refreshData();
+        startAutoRefresh();
+    </script>
+</body>
+</html>
+        """
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write(html_content.encode('utf-8'))
+    
+    def serve_json_data(self):
+        """Serve the current data as JSON"""
+        global latest_data
+        
+        response_data = latest_data.copy()
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(response_data, default=str, indent=2).encode('utf-8'))
+    
+    def serve_status(self):
+        """Serve just the status information"""
+        global latest_data
+        
+        status_data = {
+            "status": latest_data["status"],
+            "timestamp": latest_data["timestamp"],
+            "error_count": latest_data["error_count"],
+            "total_readings": latest_data["total_readings"]
+        }
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(status_data, default=str).encode('utf-8'))
+
+
+def start_web_server(port, logger):
+    """Start the monitoring web server in a separate thread"""
+    try:
+        server = HTTPServer(('', port), WebServerHandler)
+        logger.info(f"Web server starting on http://0.0.0.0:{port}")
+        logger.info(f"Dashboard available at: http://localhost:{port}")
+        logger.info(f"JSON API available at: http://localhost:{port}/api/data")
+        server.serve_forever()
+    except Exception as e:
+        logger.error(f"Web server error: {e}")
 
 
 class WindSensorReader:
@@ -199,15 +452,31 @@ def main():
     logger.info(f"Wind speed calibration factor: {args.calibration_factor}")
     logger.info(f"Wind direction offset: {args.direction_offset}°")
     logger.info(f"Wind direction scale: {args.direction_scale}")
+    
+    # Start web server if requested
+    if args.web_server:
+        web_thread = threading.Thread(
+            target=start_web_server, 
+            args=(args.web_port, logger),
+            daemon=True
+        )
+        web_thread.start()
+        logger.info(f"Web monitoring enabled on port {args.web_port}")
+    
     logger.info("Waiting for data from Davis wind sensor...")
     
     try:
+        # Update global status
+        global latest_data
+        latest_data["status"] = "connecting"
+        
         # Main loop with automatic reconnection
         while True:
             try:
                 # Continuously read and process data as it arrives
                 with wind_reader.serial_connection() as ser:
                     logger.info("Connected to serial port, reading data continuously...")
+                    latest_data["status"] = "running"
                     
                     while True:
                         try:
@@ -216,9 +485,18 @@ def main():
                             
                             if line.strip():  # Only process non-empty lines
                                 logger.debug(f"Raw serial data: {line.strip()}")
+                                
+                                # Update global data for web server
+                                latest_data["raw_line"] = line.strip()
+                                latest_data["timestamp"] = datetime.now()
+                                
                                 wind_data = wind_reader.parse_wind_data(line)
                                 
                                 if wind_data:
+                                    # Update global data for web server
+                                    latest_data["wind_data"] = wind_data
+                                    latest_data["total_readings"] += 1
+                                    
                                     # Primary measurements using WXT-style topic naming
                                     plugin.publish("env.wind.speed", wind_data['wind_speed_knots'], 
                                                  meta={"units": "knots", "description": "Wind speed in knots"})
@@ -257,6 +535,7 @@ def main():
                                                     f"Speed (m/s): {wind_data['wind_speed_mps']:.2f}")
                                 else:
                                     logger.debug(f"Could not parse line: {line.strip()}")
+                                    latest_data["error_count"] += 1
                                     
                         except serial.SerialTimeoutException:
                             logger.debug("Serial read timeout, continuing...")
@@ -267,10 +546,14 @@ def main():
                             
             except (serial.SerialException, OSError) as e:
                 logger.error(f"Serial port error: {e}")
+                latest_data["status"] = "error"
+                latest_data["error_count"] += 1
+                
                 # Publish error status
                 plugin.publish("davis.wind.sensor_status", 0, 
                              meta={"description": "Davis wind sensor status (0=error, 1=ok)"})
                 logger.info("Attempting to reconnect in 5 seconds...")
+                latest_data["status"] = "reconnecting"
                 time.sleep(5.0)
                 continue
                 
