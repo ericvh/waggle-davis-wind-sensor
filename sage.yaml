@@ -11,9 +11,9 @@ collaborators: []
 funding: 
   - "Self-funded"
 license: "MIT"
-homepage: "https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor"
-repository: "https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor"
-documentation: "https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor/blob/main/README.md"
+homepage: "https://github.com/ericvh/waggle-davis-wind-sensor"
+repository: "https://github.com/ericvh/waggle-davis-wind-sensor"
+documentation: "https://github.com/ericvh/waggle-davis-wind-sensor/blob/main/README.md"
 
 # Contact information
 contact:
@@ -54,7 +54,7 @@ sources:
     url: "."
     
 images:
-  - name: "ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:latest"
+  - name: "ghcr.io/ericvh/waggle-davis-wind-sensor:latest"
     architectures:
       - "linux/amd64"
       - "linux/arm64"
@@ -62,18 +62,18 @@ images:
 resources:
   - name: "davis-wind-sensor"
     type: "job"
-    image: "ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:latest"
+    image: "ghcr.io/ericvh/waggle-davis-wind-sensor:latest"
     command: ["python3", "main.py"]
     arguments:
-      - "--port=/dev/ttyUSB0"
-      - "--baudrate=9600"
+      - "--port=/dev/ttyACM2"
+      - "--baudrate=115200"
       - "--reporting-interval=60"
     env:
       - name: "PLUGIN_NAME"
         value: "davis-wind-sensor"
     privileged: true  # Required for serial port access
     devices:
-      - "/dev/ttyUSB0:/dev/ttyUSB0"  # Map serial device
+      - "/dev/ttyACM2:/dev/ttyACM2"  # Map serial device
     # Resource requirements
     limits:
       memory: "256Mi"

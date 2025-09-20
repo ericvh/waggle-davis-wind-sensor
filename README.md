@@ -1,7 +1,7 @@
 # Davis Wind Sensor Plugin for Waggle
 
-[![Build Multi-Arch Docker Image](https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor/actions/workflows/docker-build.yml/badge.svg)](https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor/actions/workflows/docker-build.yml)
-[![Test](https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor/actions/workflows/test.yml/badge.svg)](https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor/actions/workflows/test.yml)
+[![Build Multi-Arch Docker Image](https://github.com/ericvh/waggle-davis-wind-sensor/actions/workflows/docker-build.yml/badge.svg)](https://github.com/ericvh/waggle-davis-wind-sensor/actions/workflows/docker-build.yml)
+[![Test](https://github.com/ericvh/waggle-davis-wind-sensor/actions/workflows/test.yml/badge.svg)](https://github.com/ericvh/waggle-davis-wind-sensor/actions/workflows/test.yml)
 
 A Waggle plugin that reads Davis wind sensor data from Arduino via USB serial port and publishes wind speed in knots, wind direction in degrees, along with debug information including rotations per second (RPS) and raw sensor values.
 
@@ -158,8 +158,8 @@ python3 main.py --web-server --web-port 9090
 
 **With Docker:**
 ```bash
-docker run -p 8080:8080 --device=/dev/ttyUSB0:/dev/ttyUSB0 --privileged \
-  ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:latest \
+docker run -p 8080:8080 --device=/dev/ttyACM2:/dev/ttyACM2 --privileged \
+  ghcr.io/ericvh/waggle-davis-wind-sensor:latest \
   --web-server --web-port 8080
 ```
 
@@ -229,8 +229,8 @@ python3 main.py [options]
 ```
 
 **Options:**
-- `--port` : Serial port device (default: `/dev/ttyUSB0`)
-- `--baudrate` : Serial port baud rate (default: `9600`)
+- `--port` : Serial port device (default: `/dev/ttyACM2`)
+- `--baudrate` : Serial port baud rate (default: `115200`)
 - `--timeout` : Serial port read timeout in seconds (default: `5.0`)
 - `--calibration-factor` : Wind speed calibration factor (default: `1.0`)
 - `--direction-offset` : Wind direction offset in degrees (default: `0.0`)
@@ -286,26 +286,26 @@ Multi-architecture Docker images are automatically built and published to GitHub
 
 **Pull the latest image:**
 ```bash
-docker pull ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:latest
+docker pull ghcr.io/ericvh/waggle-davis-wind-sensor:latest
 ```
 
 **Run with pre-built image:**
 ```bash
-docker run --device=/dev/ttyUSB0:/dev/ttyUSB0 --privileged \
-  ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:latest
+docker run --device=/dev/ttyACM2:/dev/ttyACM2 --privileged \
+  ghcr.io/ericvh/waggle-davis-wind-sensor:latest
 ```
 
 **Custom configuration:**
 ```bash
-docker run --device=/dev/ttyUSB0:/dev/ttyUSB0 --privileged \
-  ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:latest \
-  --port /dev/ttyUSB0 --baudrate 9600 --debug \
+docker run --device=/dev/ttyACM2:/dev/ttyACM2 --privileged \
+  ghcr.io/ericvh/waggle-davis-wind-sensor:latest \
+  --port /dev/ttyACM2 --baudrate 115200 --debug \
   --calibration-factor 1.05 --direction-offset -15.0
 ```
 
 **Using specific version:**
 ```bash
-docker pull ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:v1.0.0
+docker pull ghcr.io/ericvh/waggle-davis-wind-sensor:v1.0.0
 ```
 
 ### Building Locally
@@ -317,7 +317,7 @@ docker build -t davis-wind-sensor-plugin .
 
 **Run locally built image:**
 ```bash
-docker run --device=/dev/ttyUSB0:/dev/ttyUSB0 --privileged davis-wind-sensor-plugin
+docker run --device=/dev/ttyACM2:/dev/ttyACM2 --privileged davis-wind-sensor-plugin
 ```
 
 ## Hardware Requirements
@@ -362,7 +362,7 @@ Ensure the user has access to the serial port:
 ```bash
 sudo usermod -a -G dialout $USER
 # Log out and log back in, or run:
-sudo chmod 666 /dev/ttyUSB0
+sudo chmod 666 /dev/ttyACM2
 ```
 
 ### Calibration
@@ -398,8 +398,8 @@ python3 main.py --direction-offset -15.0 --direction-scale 1.2
 ### Common Issues
 
 **Serial port not found:**
-- Check if the device is connected: `ls /dev/ttyUSB*`
-- Verify permissions: `ls -l /dev/ttyUSB0`
+- Check if the device is connected: `ls /dev/ttyACM*` or `ls /dev/ttyUSB*`
+- Verify permissions: `ls -l /dev/ttyACM2`
 - Check USB connection and driver installation
 
 **No data received:**

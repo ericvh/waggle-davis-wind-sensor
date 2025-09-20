@@ -44,14 +44,14 @@ def parse_args():
     )
     parser.add_argument(
         "--port", 
-        default="/dev/ttyUSB0", 
-        help="Serial port device (default: /dev/ttyUSB0)"
+        default="/dev/ttyACM2", 
+        help="Serial port device (default: /dev/ttyACM2)"
     )
     parser.add_argument(
         "--baudrate", 
         type=int, 
-        default=9600, 
-        help="Serial port baud rate (default: 9600)"
+        default=115200, 
+        help="Serial port baud rate (default: 115200)"
     )
     parser.add_argument(
         "--timeout", 
@@ -623,7 +623,7 @@ def start_web_server(port, logger):
 class WindSensorReader:
     """Wind sensor data reader for USB serial devices"""
     
-    def __init__(self, port, baudrate=9600, timeout=5.0, calibration_factor=1.0, 
+    def __init__(self, port, baudrate=115200, timeout=5.0, calibration_factor=1.0, 
                  direction_offset=0.0, direction_scale=1.0):
         self.port = port
         self.baudrate = baudrate
