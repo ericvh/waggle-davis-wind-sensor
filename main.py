@@ -15,6 +15,12 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from waggle.plugin import Plugin
 
+try:
+    from bs4 import BeautifulSoup
+    HAS_BEAUTIFULSOUP = True
+except ImportError:
+    HAS_BEAUTIFULSOUP = False
+
 
 # Wind speed conversion constants
 MPS_TO_KNOTS = 1.94384  # meters per second to knots conversion factor
@@ -221,6 +227,7 @@ class TempestCalibrator:
         self.logger = logger
         self.base_url = f"https://tempestwx.com/station/{station_id}"
         self.api_url = f"https://swd.weatherflow.com/swd/rest/observations/station/{station_id}"
+        self.has_beautifulsoup = HAS_BEAUTIFULSOUP
         
     def fetch_tempest_data(self):
         """Fetch current wind data from Tempest station"""
@@ -260,14 +267,126 @@ class TempestCalibrator:
                             'source': 'tempest_api'
                         }
             
-            self.logger.warning(f"Could not fetch Tempest data via API (status: {response.status_code})")
-            return None
+            self.logger.debug(f"Could not fetch Tempest data via API (status: {response.status_code})")
+            # Fallback to web scraping
+            return self._scrape_tempest_webpage()
             
         except requests.RequestException as e:
-            self.logger.error(f"Error fetching Tempest data: {e}")
-            return None
+            self.logger.debug(f"API request failed: {e}, trying web scraping")
+            return self._scrape_tempest_webpage()
         except (KeyError, IndexError, ValueError) as e:
-            self.logger.error(f"Error parsing Tempest data: {e}")
+            self.logger.debug(f"Error parsing API data: {e}, trying web scraping")
+            return self._scrape_tempest_webpage()
+    
+    def _scrape_tempest_webpage(self):
+        """Scrape wind data from Tempest public webpage as fallback"""
+        if not self.has_beautifulsoup:
+            self.logger.error("BeautifulSoup4 not available for web scraping. Install with: pip install beautifulsoup4")
+            return None
+        
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            response = requests.get(self.base_url, headers=headers, timeout=15)
+            
+            if response.status_code != 200:
+                self.logger.error(f"Could not fetch Tempest webpage (status: {response.status_code})")
+                return None
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Look for wind data in the page
+            wind_speed_mph = None
+            wind_direction = None
+            wind_gust_mph = None
+            
+            # Try to find wind speed and direction data
+            # Tempest pages often have data in script tags or data attributes
+            
+            # Method 1: Look for wind data in text content
+            page_text = soup.get_text()
+            
+            # Look for wind speed patterns (mph)
+            wind_speed_match = re.search(r'Wind.*?(\d+(?:\.\d+)?)\s*mph', page_text, re.IGNORECASE)
+            if wind_speed_match:
+                wind_speed_mph = float(wind_speed_match.group(1))
+            
+            # Look for wind direction patterns
+            wind_dir_match = re.search(r'(?:Wind.*?Direction.*?|Direction.*?)(\d+(?:\.\d+)?)\s*°?', page_text, re.IGNORECASE)
+            if wind_dir_match:
+                wind_direction = float(wind_dir_match.group(1))
+            
+            # Look for gust patterns
+            gust_match = re.search(r'Gust.*?(\d+(?:\.\d+)?)\s*mph', page_text, re.IGNORECASE)
+            if gust_match:
+                wind_gust_mph = float(gust_match.group(1))
+            
+            # Method 2: Look in script tags for JSON data
+            if wind_speed_mph is None or wind_direction is None:
+                scripts = soup.find_all('script')
+                for script in scripts:
+                    if script.string and 'wind' in script.string.lower():
+                        # Try to extract wind data from JavaScript variables
+                        wind_speed_js = re.search(r'wind.*?speed.*?["\']?(\d+(?:\.\d+)?)', script.string, re.IGNORECASE)
+                        wind_dir_js = re.search(r'wind.*?dir.*?["\']?(\d+(?:\.\d+)?)', script.string, re.IGNORECASE)
+                        
+                        if wind_speed_js and wind_speed_mph is None:
+                            wind_speed_mph = float(wind_speed_js.group(1))
+                        if wind_dir_js and wind_direction is None:
+                            wind_direction = float(wind_dir_js.group(1))
+            
+            # Method 3: Look for data attributes and specific elements
+            if wind_speed_mph is None or wind_direction is None:
+                # Look for elements with wind-related classes or data attributes
+                wind_elements = soup.find_all(attrs={'class': re.compile(r'wind', re.I)})
+                wind_elements.extend(soup.find_all(attrs={'data-wind': True}))
+                
+                for element in wind_elements:
+                    text = element.get_text()
+                    if 'mph' in text.lower() and wind_speed_mph is None:
+                        speed_match = re.search(r'(\d+(?:\.\d+)?)', text)
+                        if speed_match:
+                            wind_speed_mph = float(speed_match.group(1))
+                    
+                    if '°' in text and wind_direction is None:
+                        dir_match = re.search(r'(\d+(?:\.\d+)?)', text)
+                        if dir_match:
+                            wind_direction = float(dir_match.group(1))
+            
+            if wind_speed_mph is not None and wind_direction is not None:
+                # Convert mph to m/s and knots
+                wind_speed_mps = wind_speed_mph * 0.44704  # mph to m/s
+                wind_speed_knots = wind_speed_mph * 0.868976  # mph to knots
+                
+                wind_gust_knots = None
+                if wind_gust_mph is not None:
+                    wind_gust_knots = wind_gust_mph * 0.868976
+                
+                current_time = datetime.now(timezone.utc)
+                
+                self.logger.info(f"Successfully scraped Tempest data: {wind_speed_mph:.1f} mph ({wind_speed_knots:.1f} knots), {wind_direction:.0f}°")
+                
+                return {
+                    'wind_speed_mps': wind_speed_mps,
+                    'wind_speed_knots': wind_speed_knots,
+                    'wind_direction_deg': wind_direction,
+                    'wind_gust_knots': wind_gust_knots,
+                    'timestamp_utc': current_time,
+                    'timestamp_local': current_time.astimezone(),
+                    'timestamp': current_time.astimezone(),
+                    'data_age_seconds': 0.0,  # Assume current for scraped data
+                    'source': 'tempest_webpage'
+                }
+            else:
+                self.logger.warning(f"Could not extract wind data from Tempest webpage. Found speed: {wind_speed_mph}, direction: {wind_direction}")
+                return None
+                
+        except requests.RequestException as e:
+            self.logger.error(f"Error scraping Tempest webpage: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error parsing Tempest webpage: {e}")
             return None
     
     def calculate_calibration(self, davis_readings, tempest_readings):

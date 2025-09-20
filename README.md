@@ -146,7 +146,9 @@ The plugin includes an innovative calibration feature that uses public [Tempest 
 ### How It Works
 
 1. **Reference Station**: Specify a nearby Tempest weather station ID
-2. **Data Collection**: Plugin fetches real-time data from the Tempest station via WeatherFlow API
+2. **Data Collection**: Plugin fetches real-time data from the Tempest station via multiple methods:
+   - **Primary**: WeatherFlow API (requires authentication)
+   - **Fallback**: Web scraping from public Tempest webpage (no authentication needed)
 3. **Comparison**: Compares your Davis sensor readings with Tempest measurements
 4. **Calibration Calculation**: Calculates optimal calibration factors and direction offsets
 5. **Confidence Metrics**: Provides statistical confidence measures for the calibration
@@ -167,6 +169,13 @@ python3 main.py --tempest-station 98272 --tempest-calibration --calibration-samp
 
 **Find your nearest Tempest station:**
 Visit [tempestwx.com](https://tempestwx.com) and search for stations in your area. The station ID is in the URL (e.g., `tempestwx.com/station/98272` → station ID is `98272`).
+
+**Install web scraping support (recommended):**
+```bash
+pip install beautifulsoup4
+# Or install all dependencies at once:
+pip install -r requirements.txt
+```
 
 ### Calibration Process
 
@@ -197,6 +206,8 @@ To apply these calibrations, restart with:
 
 - **Professional Reference**: Tempest stations are commercially calibrated
 - **Real-time Accuracy**: Uses current atmospheric conditions for calibration
+- **Multiple Access Methods**: API and web scraping for maximum compatibility
+- **No Authentication Required**: Web scraping works without API keys or registration
 - **Statistical Confidence**: Provides confidence metrics for calibration quality
 - **Automated Process**: No manual measurement or calculation required
 - **Network Integration**: Leverages existing weather monitoring infrastructure
@@ -207,6 +218,7 @@ To apply these calibrations, restart with:
 - **Geographic Proximity**: Reference station should be reasonably close (same weather conditions)
 - **Wind Activity**: Calibration works best with moderate wind speeds (1-20 knots)
 - **Time Synchronization**: Ensure system time is accurate for proper data correlation
+- **Optional Dependencies**: BeautifulSoup4 for web scraping (`pip install beautifulsoup4`)
 
 ### Timezone Handling
 
@@ -226,6 +238,32 @@ Calibration sample 1/10: Davis: 8.50kts 145.0°, Tempest: 9.20kts 142.0° (age: 
 ```
 
 Whether your system is in GMT, US Central, or any other timezone, the calibration will work correctly because it compares real-time atmospheric conditions rather than historical correlations.
+
+### Data Access Methods
+
+The plugin uses multiple methods to fetch Tempest station data for maximum reliability:
+
+**1. WeatherFlow API (Primary)**
+- Official API access to Tempest station data
+- Requires authentication/API key
+- Most reliable and structured data format
+- Falls back to web scraping if API access fails
+
+**2. Web Scraping (Fallback)**
+- Extracts data directly from public Tempest webpages
+- No authentication or API keys required
+- Uses multiple parsing strategies:
+  - Text pattern matching for wind speed/direction
+  - JavaScript variable extraction
+  - HTML element analysis with wind-related classes
+- Automatic unit conversion (mph to knots/m/s)
+
+**Example Log Output:**
+```
+Could not fetch Tempest data via API (status: 401), trying web scraping
+Successfully scraped Tempest data: 12.3 mph (10.7 knots), 245°
+Calibration sample 1/10: Davis: 8.50kts 145.0°, Tempest: 10.7kts 245.0° (age: 0.0s)
+```
 
 ### Calibration Data Topics
 

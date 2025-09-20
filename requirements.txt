@@ -1,3 +1,4 @@
 pywaggle>=0.50.0
 pyserial>=3.5
-requests>=2.25.0 
+requests>=2.25.0
+beautifulsoup4>=4.9.0 
