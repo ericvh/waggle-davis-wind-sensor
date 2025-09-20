@@ -3,10 +3,45 @@ description: "Davis wind sensor plugin that reads wind data from Arduino via USB
 version: "1.0.0"
 namespace: "sage"
 keywords: ["davis", "wind", "sensor", "weather", "serial", "anemometer", "arduino"]
-authors: "Eric Van Hensbergen <ericvh@gmail.com>"
+authors: 
+  - "Eric Van Hensbergen <ericvh@gmail.com>"
 collaborators: []
-funding: []
+funding: 
+  - "Self-funded"
 license: "MIT"
+homepage: "https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor"
+repository: "https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor"
+documentation: "https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor/blob/main/README.md"
+
+# Contact information
+contact:
+  email: "ericvh@gmail.com"
+  name: "Eric Van Hensbergen"
+
+# Science metadata
+science:
+  goals: "Monitor environmental wind conditions using Davis anemometer for weather and climate research"
+  description: "This plugin enables continuous monitoring of wind speed and direction using Davis wind sensors connected via Arduino. It provides real-time environmental data for meteorological studies, climate monitoring, and environmental sensing applications."
+  methodology: "Continuous serial data acquisition from Davis anemometer with real-time processing and calibration"
+  
+# Application metadata  
+app:
+  type: "environmental-monitoring"
+  category: "weather"
+  maturity: "stable"
+  
+# Deployment configuration
+deployment:
+  scheduling: "continuous"
+  restart_policy: "always"
+  node_selector: 
+    hardware: "serial-capable"
+  
+# Plugin timing
+timing:
+  startup_time: "10s"
+  shutdown_time: "5s"
+  data_interval: "1s"
 
 sources:
   - architectures:
@@ -23,7 +58,7 @@ images:
 resources:
   - name: "davis-wind-sensor"
     type: "job"
-    image: "{image}"
+    image: "ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:latest"
     command: ["python3", "main.py"]
     arguments:
       - "--port=/dev/ttyUSB0"
@@ -34,45 +69,96 @@ resources:
     privileged: true  # Required for serial port access
     devices:
       - "/dev/ttyUSB0:/dev/ttyUSB0"  # Map serial device
+    # Resource requirements
+    limits:
+      memory: "256Mi"
+      cpu: "0.5"
+    requests:
+      memory: "128Mi" 
+      cpu: "0.1"
     
+# Hardware requirements
+hardware:
+  - name: "Davis Wind Sensor"
+    description: "Davis anemometer (cup-type) with wind vane"
+    required: true
+  - name: "Arduino Board" 
+    description: "Arduino Uno, Nano, or compatible microcontroller"
+    required: true
+  - name: "USB Serial Connection"
+    description: "USB connection from Arduino to compute node"
+    required: true
+
+# Software dependencies
+dependencies:
+  - name: "pyserial"
+    version: ">=3.5"
+    description: "Serial communication library"
+  - name: "pywaggle"
+    version: ">=0.50.0"
+    description: "Waggle plugin framework"
+
 inputs: []
 outputs:
   # Primary environmental measurements (WXT-style naming)
   - name: "env.wind.speed"
     type: "float"
-    units: "knots"
+    units: "knots" 
     description: "Wind speed in knots"
+    sensor_name: "Davis Anemometer"
+    sampling_rate: "1Hz"
+    range: "0-150"
   - name: "env.wind.direction"
     type: "float"
     units: "degrees"
     description: "Wind direction in degrees (0-360)"
+    sensor_name: "Davis Wind Vane"
+    sampling_rate: "1Hz"
+    range: "0-360"
   - name: "env.wind.speed.mps"
     type: "float"
     units: "m/s"
     description: "Wind speed in meters per second"
+    sensor_name: "Davis Anemometer"
+    sampling_rate: "1Hz"
+    range: "0-77"
   
   # Davis-specific debug measurements
   - name: "davis.wind.rps"
     type: "float"
     units: "rps"
     description: "Wind sensor rotations per second"
+    sensor_name: "Davis Anemometer"
+    sampling_rate: "1Hz"
   - name: "davis.wind.rpm.tops"
     type: "integer"
     units: "rpm"
     description: "Debounced RPM count from Davis sensor"
+    sensor_name: "Davis Anemometer"
+    sampling_rate: "1Hz"
   - name: "davis.wind.rpm.raw"
     type: "integer"
     units: "rpm"
     description: "Raw RPM count from Davis sensor"
+    sensor_name: "Davis Anemometer"
+    sampling_rate: "1Hz"
   - name: "davis.wind.pot.value"
     type: "integer"
     units: "counts"
     description: "Raw potentiometer value for wind direction"
+    sensor_name: "Davis Wind Vane"
+    sampling_rate: "1Hz"
+    range: "0-1024"
   - name: "davis.wind.iteration"
     type: "integer"
     units: "count"
     description: "Arduino iteration counter"
+    sensor_name: "Arduino"
+    sampling_rate: "1Hz"
   - name: "davis.wind.sensor_status"
     type: "integer"
     units: "status"
-    description: "Davis wind sensor status (0=error, 1=ok)" 
+    description: "Davis wind sensor status (0=error, 1=ok)"
+    sensor_name: "Davis Wind Sensor System"
+    sampling_rate: "1Hz"
+    range: "0-1" 
