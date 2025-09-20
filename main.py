@@ -8,6 +8,7 @@ import serial
 import re
 import json
 import threading
+import requests
 from datetime import datetime, timedelta
 from contextlib import contextmanager
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -99,6 +100,22 @@ def parse_args():
         type=int, 
         default=60, 
         help="MQTT reporting interval in seconds for averaged data (default: 60)"
+    )
+    parser.add_argument(
+        "--tempest-station", 
+        type=str, 
+        help="Tempest weather station ID for calibration reference (e.g., 98272)"
+    )
+    parser.add_argument(
+        "--tempest-calibration", 
+        action="store_true", 
+        help="Enable automatic calibration using Tempest station data"
+    )
+    parser.add_argument(
+        "--calibration-samples", 
+        type=int, 
+        default=10, 
+        help="Number of samples to collect for Tempest calibration (default: 10)"
     )
     return parser.parse_args()
 
@@ -194,6 +211,100 @@ class WindDataCollector:
         }
         
         return averaged_data
+
+
+class TempestCalibrator:
+    """Calibration helper using Tempest weather station data"""
+    
+    def __init__(self, station_id, logger):
+        self.station_id = station_id
+        self.logger = logger
+        self.base_url = f"https://tempestwx.com/station/{station_id}"
+        self.api_url = f"https://swd.weatherflow.com/swd/rest/observations/station/{station_id}"
+        
+    def fetch_tempest_data(self):
+        """Fetch current wind data from Tempest station"""
+        try:
+            # Try the WeatherFlow API first
+            headers = {'User-Agent': 'Davis-Wind-Sensor-Plugin/1.0'}
+            response = requests.get(self.api_url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'obs' in data and len(data['obs']) > 0:
+                    latest_obs = data['obs'][0]  # Most recent observation
+                    
+                    # WeatherFlow API format: [timestamp, wind_lull, wind_avg, wind_gust, wind_direction, ...]
+                    if len(latest_obs) >= 5:
+                        wind_speed_mps = latest_obs[2]  # wind_avg in m/s
+                        wind_direction = latest_obs[4]  # wind_direction in degrees
+                        wind_gust_mps = latest_obs[3]   # wind_gust in m/s
+                        
+                        # Convert m/s to knots
+                        wind_speed_knots = wind_speed_mps * 1.94384
+                        wind_gust_knots = wind_gust_mps * 1.94384
+                        
+                        return {
+                            'wind_speed_mps': wind_speed_mps,
+                            'wind_speed_knots': wind_speed_knots,
+                            'wind_direction_deg': wind_direction,
+                            'wind_gust_knots': wind_gust_knots,
+                            'timestamp': datetime.fromtimestamp(latest_obs[0]),
+                            'source': 'tempest_api'
+                        }
+            
+            self.logger.warning(f"Could not fetch Tempest data via API (status: {response.status_code})")
+            return None
+            
+        except requests.RequestException as e:
+            self.logger.error(f"Error fetching Tempest data: {e}")
+            return None
+        except (KeyError, IndexError, ValueError) as e:
+            self.logger.error(f"Error parsing Tempest data: {e}")
+            return None
+    
+    def calculate_calibration(self, davis_readings, tempest_readings):
+        """Calculate calibration factors based on Davis vs Tempest comparison"""
+        if not davis_readings or not tempest_readings:
+            return None
+        
+        # Calculate average differences
+        speed_ratios = []
+        direction_diffs = []
+        
+        for davis, tempest in zip(davis_readings, tempest_readings):
+            if davis['wind_speed_knots'] > 0.1 and tempest['wind_speed_knots'] > 0.1:
+                speed_ratio = tempest['wind_speed_knots'] / davis['wind_speed_knots']
+                speed_ratios.append(speed_ratio)
+            
+            # Calculate direction difference (handle wrap-around)
+            dir_diff = tempest['wind_direction_deg'] - davis['wind_direction_deg']
+            if dir_diff > 180:
+                dir_diff -= 360
+            elif dir_diff < -180:
+                dir_diff += 360
+            direction_diffs.append(dir_diff)
+        
+        if not speed_ratios:
+            return None
+        
+        # Calculate recommended calibration values
+        avg_speed_ratio = sum(speed_ratios) / len(speed_ratios)
+        avg_direction_offset = sum(direction_diffs) / len(direction_diffs)
+        
+        # Calculate confidence metrics
+        speed_std = (sum((r - avg_speed_ratio) ** 2 for r in speed_ratios) / len(speed_ratios)) ** 0.5
+        direction_std = (sum((d - avg_direction_offset) ** 2 for d in direction_diffs) / len(direction_diffs)) ** 0.5
+        
+        return {
+            'speed_calibration_factor': avg_speed_ratio,
+            'direction_offset': avg_direction_offset,
+            'speed_confidence': 1.0 / (1.0 + speed_std),  # Higher is better
+            'direction_confidence': 1.0 / (1.0 + direction_std / 10.0),  # Scale direction std
+            'sample_count': len(speed_ratios),
+            'speed_std_dev': speed_std,
+            'direction_std_dev': direction_std
+        }
 
 
 class WebServerHandler(BaseHTTPRequestHandler):
@@ -807,6 +918,14 @@ def main():
     # Initialize data collector for averaged reporting
     data_collector = WindDataCollector(args.reporting_interval)
     
+    # Initialize Tempest calibrator if requested
+    tempest_calibrator = None
+    if args.tempest_station:
+        tempest_calibrator = TempestCalibrator(args.tempest_station, logger)
+        logger.info(f"Tempest calibration enabled using station {args.tempest_station}")
+        if args.tempest_calibration:
+            logger.info(f"Automatic calibration mode: will collect {args.calibration_samples} samples")
+    
     # Start web server if requested
     if args.web_server:
         web_thread = threading.Thread(
@@ -824,6 +943,15 @@ def main():
         # Update global status
         global latest_data
         latest_data["status"] = "connecting"
+        
+        # Tempest calibration data collection
+        calibration_data = {
+            'davis_readings': [],
+            'tempest_readings': [],
+            'samples_collected': 0,
+            'calibration_active': args.tempest_calibration,
+            'calibration_complete': False
+        }
         
         # Main loop with automatic reconnection
         while True:
@@ -855,6 +983,63 @@ def main():
                                     
                                     # Add reading to data collector for averaging
                                     data_collector.add_reading(wind_data)
+                                    
+                                    # Tempest calibration data collection
+                                    if (tempest_calibrator and calibration_data['calibration_active'] and 
+                                        not calibration_data['calibration_complete']):
+                                        
+                                        # Fetch current Tempest data
+                                        tempest_data = tempest_calibrator.fetch_tempest_data()
+                                        if tempest_data:
+                                            calibration_data['davis_readings'].append(wind_data)
+                                            calibration_data['tempest_readings'].append(tempest_data)
+                                            calibration_data['samples_collected'] += 1
+                                            
+                                            logger.info(f"Calibration sample {calibration_data['samples_collected']}/{args.calibration_samples}: "
+                                                       f"Davis: {wind_data['wind_speed_knots']:.2f}kts {wind_data['wind_direction_deg']:.1f}°, "
+                                                       f"Tempest: {tempest_data['wind_speed_knots']:.2f}kts {tempest_data['wind_direction_deg']:.1f}°")
+                                            
+                                            # Check if we have enough samples for calibration
+                                            if calibration_data['samples_collected'] >= args.calibration_samples:
+                                                calibration_result = tempest_calibrator.calculate_calibration(
+                                                    calibration_data['davis_readings'],
+                                                    calibration_data['tempest_readings']
+                                                )
+                                                
+                                                if calibration_result:
+                                                    logger.info("=" * 60)
+                                                    logger.info("TEMPEST CALIBRATION RESULTS")
+                                                    logger.info("=" * 60)
+                                                    logger.info(f"Recommended calibration factor: {calibration_result['speed_calibration_factor']:.4f}")
+                                                    logger.info(f"Recommended direction offset: {calibration_result['direction_offset']:.2f}°")
+                                                    logger.info(f"Speed confidence: {calibration_result['speed_confidence']:.3f}")
+                                                    logger.info(f"Direction confidence: {calibration_result['direction_confidence']:.3f}")
+                                                    logger.info(f"Sample count: {calibration_result['sample_count']}")
+                                                    logger.info("=" * 60)
+                                                    logger.info("To apply these calibrations, restart with:")
+                                                    logger.info(f"--calibration-factor {calibration_result['speed_calibration_factor']:.4f} "
+                                                               f"--direction-offset {calibration_result['direction_offset']:.2f}")
+                                                    logger.info("=" * 60)
+                                                    
+                                                    # Publish calibration data
+                                                    plugin.publish("davis.calibration.speed_factor", calibration_result['speed_calibration_factor'],
+                                                                 meta={"description": "Recommended speed calibration factor from Tempest comparison", 
+                                                                       "confidence": f"{calibration_result['speed_confidence']:.3f}",
+                                                                       "samples": str(calibration_result['sample_count'])})
+                                                    plugin.publish("davis.calibration.direction_offset", calibration_result['direction_offset'],
+                                                                 meta={"description": "Recommended direction offset from Tempest comparison", 
+                                                                       "confidence": f"{calibration_result['direction_confidence']:.3f}",
+                                                                       "samples": str(calibration_result['sample_count'])})
+                                                else:
+                                                    logger.warning("Could not calculate calibration - insufficient valid data")
+                                                
+                                                calibration_data['calibration_complete'] = True
+                                                logger.info("Calibration complete - continuing normal operation...")
+                                        else:
+                                            logger.debug("Could not fetch Tempest data for calibration sample")
+                                        
+                                        # Add delay between calibration samples to avoid rate limiting
+                                        time.sleep(2.0)
                                     
                                     # Immediate debug measurements - Davis-specific data (for web interface)
                                     plugin.publish("davis.wind.rps", wind_data['rotations_per_second'], 

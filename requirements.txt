@@ -1,2 +1,3 @@
 pywaggle>=0.50.0
-pyserial>=3.5 
+pyserial>=3.5
+requests>=2.25.0 

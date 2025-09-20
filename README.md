@@ -18,6 +18,7 @@ A Waggle plugin that reads Davis wind sensor data from Arduino via USB serial po
   - Arduino iteration counter
 - **Data Averaging**: Configurable interval averaging with proper circular statistics for wind direction
 - **Min/Max Tracking**: Wind speed lull and gust measurements during each averaging interval
+- **Tempest Calibration**: Automatic calibration using public Tempest weather stations as reference
 - **Dual-Mode Reporting**: Real-time debug data + averaged environmental measurements
 - **Continuous Data Processing**: Blocks waiting for new data instead of polling on intervals for maximum responsiveness
 - **Web Monitoring Interface**: Optional built-in web server with real-time dashboard and JSON API
@@ -49,6 +50,8 @@ The plugin publishes the following measurements:
 | `davis.wind.pot.value` | counts | Raw potentiometer value (0-1024) |
 | `davis.wind.iteration` | count | Arduino iteration counter |
 | `davis.wind.sensor_status` | status | Sensor status (0=error, 1=ok) |
+| `davis.calibration.speed_factor` | ratio | Recommended speed calibration factor from Tempest comparison |
+| `davis.calibration.direction_offset` | degrees | Recommended direction offset from Tempest comparison |
 
 ## Expected Serial Data Format
 
@@ -135,6 +138,83 @@ python3 main.py --reporting-interval 300
 ```bash
 python3 main.py --reporting-interval 10
 ```
+
+## Tempest Weather Station Calibration
+
+The plugin includes an innovative calibration feature that uses public [Tempest weather stations](https://tempestwx.com/station/98272) as reference points to automatically calibrate your Davis wind sensor. This provides a way to ensure your measurements are accurate against professionally deployed meteorological instruments.
+
+### How It Works
+
+1. **Reference Station**: Specify a nearby Tempest weather station ID
+2. **Data Collection**: Plugin fetches real-time data from the Tempest station via WeatherFlow API
+3. **Comparison**: Compares your Davis sensor readings with Tempest measurements
+4. **Calibration Calculation**: Calculates optimal calibration factors and direction offsets
+5. **Confidence Metrics**: Provides statistical confidence measures for the calibration
+
+### Usage Examples
+
+**Basic calibration check against Lanai station:**
+```bash
+python3 main.py --tempest-station 98272
+# Shows Tempest data in logs for manual comparison
+```
+
+**Automatic calibration mode:**
+```bash
+python3 main.py --tempest-station 98272 --tempest-calibration --calibration-samples 20
+# Collects 20 comparison samples and calculates calibration factors
+```
+
+**Find your nearest Tempest station:**
+Visit [tempestwx.com](https://tempestwx.com) and search for stations in your area. The station ID is in the URL (e.g., `tempestwx.com/station/98272` → station ID is `98272`).
+
+### Calibration Process
+
+1. **Start calibration mode** with sufficient wind activity (>1 knot recommended)
+2. **Sample collection** - Plugin automatically collects comparison data
+3. **Statistical analysis** - Calculates calibration factors with confidence metrics
+4. **Results display** - Shows recommended calibration values and command line
+5. **Application** - Restart plugin with suggested calibration parameters
+
+### Example Calibration Output
+
+```
+==================================================
+TEMPEST CALIBRATION RESULTS
+==================================================
+Recommended calibration factor: 1.2340
+Recommended direction offset: -15.50°
+Speed confidence: 0.892
+Direction confidence: 0.934
+Sample count: 20
+==================================================
+To apply these calibrations, restart with:
+--calibration-factor 1.2340 --direction-offset -15.50
+==================================================
+```
+
+### Benefits
+
+- **Professional Reference**: Tempest stations are commercially calibrated
+- **Real-time Accuracy**: Uses current atmospheric conditions for calibration
+- **Statistical Confidence**: Provides confidence metrics for calibration quality
+- **Automated Process**: No manual measurement or calculation required
+- **Network Integration**: Leverages existing weather monitoring infrastructure
+
+### Requirements
+
+- **Internet Connection**: Required to fetch Tempest station data
+- **Geographic Proximity**: Reference station should be reasonably close (same weather conditions)
+- **Wind Activity**: Calibration works best with moderate wind speeds (1-20 knots)
+- **Time Synchronization**: Ensure system time is accurate for proper data correlation
+
+### Calibration Data Topics
+
+The plugin publishes calibration results to MQTT:
+- `davis.calibration.speed_factor` - Recommended speed calibration factor
+- `davis.calibration.direction_offset` - Recommended direction offset in degrees
+
+Both include confidence metrics and sample count in metadata.
 
 ## Web Monitoring Interface
 
@@ -242,6 +322,9 @@ python3 main.py [options]
 - `--direction-offset` : Wind direction offset in degrees (default: `0.0`)
 - `--direction-scale` : Wind direction scaling factor (default: `1.0`)
 - `--reporting-interval` : MQTT reporting interval in seconds for averaged data (default: `60`)
+- `--tempest-station` : Tempest weather station ID for calibration reference (e.g., 98272)
+- `--tempest-calibration` : Enable automatic calibration using Tempest station data
+- `--calibration-samples` : Number of samples to collect for Tempest calibration (default: 10)
 - `--web-server` : Enable mini web server for monitoring
 - `--web-port` : Web server port (default: `8080`)
 - `--debug` : Enable debug output
