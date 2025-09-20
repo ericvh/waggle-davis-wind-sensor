@@ -826,15 +826,15 @@ def main():
                                         if averaged_data:
                                             # Publish averaged environmental measurements
                                             plugin.publish("env.wind.speed", averaged_data['avg_wind_speed_knots'], 
-                                                         meta={"units": "knots", "description": "Average wind speed in knots", "interval_seconds": averaged_data['interval_seconds'], "sample_count": averaged_data['sample_count']})
+                                                         meta={"units": "knots", "description": "Average wind speed in knots", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
                                             plugin.publish("env.wind.direction", averaged_data['avg_wind_direction_deg'], 
-                                                         meta={"units": "degrees", "description": "Average wind direction in degrees", "interval_seconds": averaged_data['interval_seconds'], "sample_count": averaged_data['sample_count']})
+                                                         meta={"units": "degrees", "description": "Average wind direction in degrees", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
                                             plugin.publish("env.wind.speed.mps", averaged_data['avg_wind_speed_mps'], 
-                                                         meta={"units": "m/s", "description": "Average wind speed in meters per second", "interval_seconds": averaged_data['interval_seconds'], "sample_count": averaged_data['sample_count']})
+                                                         meta={"units": "m/s", "description": "Average wind speed in meters per second", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
                                             
                                             # Additional averaged metrics
                                             plugin.publish("env.wind.consistency", averaged_data['wind_consistency'], 
-                                                         meta={"units": "ratio", "description": "Wind direction consistency (1.0=steady, 0.0=highly variable)", "interval_seconds": averaged_data['interval_seconds'], "sample_count": averaged_data['sample_count']})
+                                                         meta={"units": "ratio", "description": "Wind direction consistency (1.0=steady, 0.0=highly variable)", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
                                             
                                             latest_data["last_mqtt_report"] = datetime.now()
                                             latest_data["readings_since_report"] = 0
