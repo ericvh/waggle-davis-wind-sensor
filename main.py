@@ -288,12 +288,14 @@ class TempestCalibrator:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
+            self.logger.debug(f"Fetching Tempest webpage: {self.base_url}")
             response = requests.get(self.base_url, headers=headers, timeout=15)
             
             if response.status_code != 200:
                 self.logger.error(f"Could not fetch Tempest webpage (status: {response.status_code})")
                 return None
             
+            self.logger.debug(f"Successfully fetched webpage, content length: {len(response.content)} bytes")
             soup = BeautifulSoup(response.content, 'html.parser')
             
             # Look for wind data in the page
@@ -301,26 +303,61 @@ class TempestCalibrator:
             wind_direction = None
             wind_gust_mph = None
             
-            # Try to find wind speed and direction data
-            # Tempest pages often have data in script tags or data attributes
-            
             # Method 1: Look for wind data in text content
             page_text = soup.get_text()
+            self.logger.debug(f"Page text length: {len(page_text)} characters")
             
-            # Look for wind speed patterns (mph)
-            wind_speed_match = re.search(r'Wind.*?(\d+(?:\.\d+)?)\s*mph', page_text, re.IGNORECASE)
-            if wind_speed_match:
-                wind_speed_mph = float(wind_speed_match.group(1))
+            # More comprehensive wind speed patterns
+            wind_speed_patterns = [
+                r'Wind.*?(\d+(?:\.\d+)?)\s*mph',
+                r'(\d+(?:\.\d+)?)\s*mph.*?wind',
+                r'Speed.*?(\d+(?:\.\d+)?)\s*mph',
+                r'"wind_speed".*?(\d+(?:\.\d+)?)',
+                r'windSpeed.*?(\d+(?:\.\d+)?)',
+                r'wind-speed.*?(\d+(?:\.\d+)?)',
+            ]
             
-            # Look for wind direction patterns
-            wind_dir_match = re.search(r'(?:Wind.*?Direction.*?|Direction.*?)(\d+(?:\.\d+)?)\s*°?', page_text, re.IGNORECASE)
-            if wind_dir_match:
-                wind_direction = float(wind_dir_match.group(1))
+            for pattern in wind_speed_patterns:
+                wind_speed_match = re.search(pattern, page_text, re.IGNORECASE)
+                if wind_speed_match:
+                    wind_speed_mph = float(wind_speed_match.group(1))
+                    self.logger.debug(f"Found wind speed {wind_speed_mph} mph using pattern: {pattern}")
+                    break
+            
+            # More comprehensive wind direction patterns
+            wind_dir_patterns = [
+                r'Direction.*?(\d+(?:\.\d+)?)\s*°?',
+                r'(\d+(?:\.\d+)?)\s*°.*?direction',
+                r'"wind_direction".*?(\d+(?:\.\d+)?)',
+                r'windDirection.*?(\d+(?:\.\d+)?)',
+                r'wind-direction.*?(\d+(?:\.\d+)?)',
+                r'°(\d+(?:\.\d+)?)',  # Just look for numbers near degree symbols
+            ]
+            
+            for pattern in wind_dir_patterns:
+                wind_dir_match = re.search(pattern, page_text, re.IGNORECASE)
+                if wind_dir_match:
+                    direction_value = float(wind_dir_match.group(1))
+                    # Validate direction is in reasonable range
+                    if 0 <= direction_value <= 360:
+                        wind_direction = direction_value
+                        self.logger.debug(f"Found wind direction {wind_direction}° using pattern: {pattern}")
+                        break
             
             # Look for gust patterns
-            gust_match = re.search(r'Gust.*?(\d+(?:\.\d+)?)\s*mph', page_text, re.IGNORECASE)
-            if gust_match:
-                wind_gust_mph = float(gust_match.group(1))
+            gust_patterns = [
+                r'Gust.*?(\d+(?:\.\d+)?)\s*mph',
+                r'(\d+(?:\.\d+)?)\s*mph.*?gust',
+                r'"wind_gust".*?(\d+(?:\.\d+)?)',
+                r'windGust.*?(\d+(?:\.\d+)?)',
+            ]
+            
+            for pattern in gust_patterns:
+                gust_match = re.search(pattern, page_text, re.IGNORECASE)
+                if gust_match:
+                    wind_gust_mph = float(gust_match.group(1))
+                    self.logger.debug(f"Found wind gust {wind_gust_mph} mph using pattern: {pattern}")
+                    break
             
             # Method 2: Look in script tags for JSON data
             if wind_speed_mph is None or wind_direction is None:
@@ -380,6 +417,20 @@ class TempestCalibrator:
                 }
             else:
                 self.logger.warning(f"Could not extract wind data from Tempest webpage. Found speed: {wind_speed_mph}, direction: {wind_direction}")
+                
+                # Debug: Save page content for analysis
+                debug_filename = f"tempest_debug_{self.station_id}.html"
+                try:
+                    with open(debug_filename, 'w', encoding='utf-8') as f:
+                        f.write(response.text)
+                    self.logger.warning(f"Saved webpage content to {debug_filename} for debugging")
+                except Exception as e:
+                    self.logger.debug(f"Could not save debug file: {e}")
+                
+                # Show some sample content for debugging
+                sample_text = page_text[:500] if len(page_text) > 500 else page_text
+                self.logger.debug(f"Sample page content: {sample_text}")
+                
                 return None
                 
         except requests.RequestException as e:
@@ -1052,6 +1103,16 @@ def main():
         logger.info(f"Tempest station URL: https://tempestwx.com/station/{args.tempest_station}")
         logger.info(f"System timezone: {datetime.now().astimezone().tzinfo}")
         logger.info(f"Tempest data timezone: UTC (converted to local for comparison)")
+        
+        # Test the connection immediately
+        logger.info("Testing Tempest data connection...")
+        test_data = tempest_calibrator.fetch_tempest_data()
+        if test_data:
+            logger.info(f"Successfully connected to Tempest station: {test_data['wind_speed_knots']:.1f} knots, {test_data['wind_direction_deg']:.0f}° (source: {test_data['source']})")
+        else:
+            logger.warning("Could not retrieve Tempest data - calibration may not work")
+            logger.info("Try running: python3 test_tempest_scraping.py [station_id] to debug")
+        
         if args.tempest_calibration:
             logger.info(f"Automatic calibration mode: will collect {args.calibration_samples} samples")
             logger.info("Note: Calibration compares real-time readings, timezone differences are handled automatically")
