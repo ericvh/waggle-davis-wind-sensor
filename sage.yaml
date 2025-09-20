@@ -10,9 +10,15 @@ license: "MIT"
 
 sources:
   - architectures:
-      - "linux/amd64"
+      - "linux/amd64" 
       - "linux/arm64"
     url: "."
+    
+images:
+  - name: "ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:latest"
+    architectures:
+      - "linux/amd64"
+      - "linux/arm64"
 
 resources:
   - name: "davis-wind-sensor"

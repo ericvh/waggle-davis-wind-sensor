@@ -1,5 +1,8 @@
 # Davis Wind Sensor Plugin for Waggle
 
+[![Build Multi-Arch Docker Image](https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor/actions/workflows/docker-build.yml/badge.svg)](https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor/actions/workflows/docker-build.yml)
+[![Test](https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor/actions/workflows/test.yml/badge.svg)](https://github.com/YOUR_USERNAME/waggle-davis-wind-sensor/actions/workflows/test.yml)
+
 A Waggle plugin that reads Davis wind sensor data from Arduino via USB serial port and publishes wind speed in knots, wind direction in degrees, along with debug information including rotations per second (RPS) and raw sensor values.
 
 ## Features
@@ -71,6 +74,22 @@ The plugin uses **continuous blocking reads** instead of polling intervals:
 
 This approach ensures maximum responsiveness and efficient use of system resources.
 
+## Automated Builds
+
+The repository includes GitHub Actions that automatically:
+
+- **Multi-Architecture Builds**: Creates Docker images for both AMD64 and ARM64 platforms
+- **Code Quality Checks**: Runs linting, formatting, and syntax validation
+- **Automated Publishing**: Pushes images to GitHub Container Registry on every commit to main
+- **Version Tagging**: Creates versioned releases when tags are pushed (e.g., `v1.0.0`)
+- **Pull Request Testing**: Validates builds and tests on every pull request
+
+### Available Image Tags
+
+- `latest` - Latest build from main branch
+- `v1.0.0` - Specific version releases
+- `main` - Latest commit from main branch
+
 ## Usage
 
 ### Command Line Arguments
@@ -123,21 +142,44 @@ python3 main.py --direction-scale 1.333
 
 ## Docker Deployment
 
-### Build the Docker image:
+### Using Pre-built Images (Recommended)
+
+Multi-architecture Docker images are automatically built and published to GitHub Container Registry for both AMD64 and ARM64 platforms.
+
+**Pull the latest image:**
+```bash
+docker pull ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:latest
+```
+
+**Run with pre-built image:**
+```bash
+docker run --device=/dev/ttyUSB0:/dev/ttyUSB0 --privileged \
+  ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:latest
+```
+
+**Custom configuration:**
+```bash
+docker run --device=/dev/ttyUSB0:/dev/ttyUSB0 --privileged \
+  ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:latest \
+  --port /dev/ttyUSB0 --baudrate 9600 --debug \
+  --calibration-factor 1.05 --direction-offset -15.0
+```
+
+**Using specific version:**
+```bash
+docker pull ghcr.io/YOUR_USERNAME/waggle-davis-wind-sensor:v1.0.0
+```
+
+### Building Locally
+
+**Build the Docker image:**
 ```bash
 docker build -t davis-wind-sensor-plugin .
 ```
 
-### Run with Docker:
+**Run locally built image:**
 ```bash
 docker run --device=/dev/ttyUSB0:/dev/ttyUSB0 --privileged davis-wind-sensor-plugin
-```
-
-### Custom configuration:
-```bash
-docker run --device=/dev/ttyUSB0:/dev/ttyUSB0 --privileged \
-  davis-wind-sensor-plugin --port /dev/ttyUSB0 --baudrate 9600 --debug \
-  --calibration-factor 1.05 --direction-offset -15.0
 ```
 
 ## Hardware Requirements

@@ -15,6 +15,9 @@
 - [x] RPM to wind speed calibration support
 - [x] Wind direction calibration (offset and scaling)
 - [x] Continuous data reading (blocking instead of polling intervals)
+- [x] GitHub Actions for automated multi-arch Docker builds
+- [x] Automated publishing to GitHub Container Registry
+- [x] Code quality testing workflows
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
@@ -96,11 +99,14 @@
 - [ ] Performance regression testing
 
 ## Deployment & Operations 🚀
-- [ ] Automated CI/CD pipeline setup
-- [ ] Container registry publishing
+- [x] Automated CI/CD pipeline setup
+- [x] Container registry publishing (GitHub Container Registry)
+- [x] Multi-architecture image builds (AMD64/ARM64)
 - [ ] Production deployment procedures
 - [ ] Monitoring and alerting setup
 - [ ] Backup and recovery procedures
+- [ ] Kubernetes deployment manifests
+- [ ] Helm chart for easy deployment
 
 ---
 
