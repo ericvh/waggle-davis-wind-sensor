@@ -9,7 +9,7 @@ import re
 import json
 import threading
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -244,12 +244,19 @@ class TempestCalibrator:
                         wind_speed_knots = wind_speed_mps * 1.94384
                         wind_gust_knots = wind_gust_mps * 1.94384
                         
+                        # WeatherFlow API returns UTC timestamps
+                        utc_timestamp = datetime.fromtimestamp(latest_obs[0], tz=timezone.utc)
+                        local_timestamp = utc_timestamp.astimezone()
+                        
                         return {
                             'wind_speed_mps': wind_speed_mps,
                             'wind_speed_knots': wind_speed_knots,
                             'wind_direction_deg': wind_direction,
                             'wind_gust_knots': wind_gust_knots,
-                            'timestamp': datetime.fromtimestamp(latest_obs[0]),
+                            'timestamp_utc': utc_timestamp,
+                            'timestamp_local': local_timestamp,
+                            'timestamp': local_timestamp,  # For backward compatibility
+                            'data_age_seconds': (datetime.now(timezone.utc) - utc_timestamp).total_seconds(),
                             'source': 'tempest_api'
                         }
             
@@ -923,8 +930,12 @@ def main():
     if args.tempest_station:
         tempest_calibrator = TempestCalibrator(args.tempest_station, logger)
         logger.info(f"Tempest calibration enabled using station {args.tempest_station}")
+        logger.info(f"Tempest station URL: https://tempestwx.com/station/{args.tempest_station}")
+        logger.info(f"System timezone: {datetime.now().astimezone().tzinfo}")
+        logger.info(f"Tempest data timezone: UTC (converted to local for comparison)")
         if args.tempest_calibration:
             logger.info(f"Automatic calibration mode: will collect {args.calibration_samples} samples")
+            logger.info("Note: Calibration compares real-time readings, timezone differences are handled automatically")
     
     # Start web server if requested
     if args.web_server:
@@ -997,7 +1008,8 @@ def main():
                                             
                                             logger.info(f"Calibration sample {calibration_data['samples_collected']}/{args.calibration_samples}: "
                                                        f"Davis: {wind_data['wind_speed_knots']:.2f}kts {wind_data['wind_direction_deg']:.1f}°, "
-                                                       f"Tempest: {tempest_data['wind_speed_knots']:.2f}kts {tempest_data['wind_direction_deg']:.1f}°")
+                                                       f"Tempest: {tempest_data['wind_speed_knots']:.2f}kts {tempest_data['wind_direction_deg']:.1f}° "
+                                                       f"(age: {tempest_data['data_age_seconds']:.1f}s)")
                                             
                                             # Check if we have enough samples for calibration
                                             if calibration_data['samples_collected'] >= args.calibration_samples:

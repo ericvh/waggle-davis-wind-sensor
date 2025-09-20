@@ -208,6 +208,25 @@ To apply these calibrations, restart with:
 - **Wind Activity**: Calibration works best with moderate wind speeds (1-20 knots)
 - **Time Synchronization**: Ensure system time is accurate for proper data correlation
 
+### Timezone Handling
+
+The calibration system automatically handles timezone differences between your system and the Tempest station:
+
+- **Tempest Data**: WeatherFlow API returns timestamps in UTC
+- **Local Conversion**: Plugin converts Tempest timestamps to your local timezone
+- **Real-time Comparison**: Calibration compares current readings from both sensors
+- **Data Age Monitoring**: Shows how fresh the Tempest data is (typically <60 seconds)
+- **No Manual Adjustment**: Timezone differences are handled automatically
+
+**Example Log Output:**
+```
+System timezone: US/Central
+Tempest data timezone: UTC (converted to local for comparison)
+Calibration sample 1/10: Davis: 8.50kts 145.0°, Tempest: 9.20kts 142.0° (age: 23.4s)
+```
+
+Whether your system is in GMT, US Central, or any other timezone, the calibration will work correctly because it compares real-time atmospheric conditions rather than historical correlations.
+
 ### Calibration Data Topics
 
 The plugin publishes calibration results to MQTT:
