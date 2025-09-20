@@ -108,6 +108,8 @@ class WebServerHandler(BaseHTTPRequestHandler):
         
         if parsed_path.path == '/':
             self.serve_dashboard()
+        elif parsed_path.path == '/data.html' or parsed_path.path == '/simple':
+            self.serve_simple_html()
         elif parsed_path.path == '/api/data':
             self.serve_json_data()
         elif parsed_path.path == '/api/status':
@@ -308,6 +310,205 @@ class WebServerHandler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         self.wfile.write(json.dumps(status_data, default=str).encode('utf-8'))
+    
+    def serve_simple_html(self):
+        """Serve a simple formatted HTML view of the current data"""
+        global latest_data
+        
+        # Get current time for display
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Format the data timestamp if available
+        data_time = "No data yet"
+        if latest_data["timestamp"]:
+            data_time = latest_data["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Build the HTML content
+        html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Davis Wind Sensor Data</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="10">
+    <style>
+        body {{ 
+            font-family: 'Courier New', monospace; 
+            margin: 20px; 
+            background-color: #f8f9fa;
+            line-height: 1.4;
+        }}
+        .container {{ 
+            max-width: 800px; 
+            margin: 0 auto; 
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        .header {{ 
+            text-align: center; 
+            margin-bottom: 20px; 
+            border-bottom: 2px solid #dee2e6;
+            padding-bottom: 10px;
+        }}
+        .data-section {{ 
+            margin: 15px 0; 
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+        }}
+        .measurement {{ 
+            display: flex; 
+            justify-content: space-between; 
+            margin: 5px 0;
+            padding: 3px 0;
+        }}
+        .label {{ 
+            font-weight: bold; 
+            color: #495057;
+        }}
+        .value {{ 
+            color: #212529; 
+            font-weight: bold;
+        }}
+        .status-ok {{ color: #28a745; }}
+        .status-error {{ color: #dc3545; }}
+        .timestamp {{ 
+            color: #6c757d; 
+            font-size: 0.9em; 
+            text-align: center;
+            margin-top: 20px;
+            border-top: 1px solid #dee2e6;
+            padding-top: 10px;
+        }}
+        .raw-data {{ 
+            background-color: #e9ecef; 
+            padding: 10px; 
+            border-radius: 3px; 
+            font-family: monospace;
+            word-break: break-all;
+        }}
+        @media (max-width: 600px) {{
+            .measurement {{ flex-direction: column; }}
+            .label {{ margin-bottom: 2px; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌪️ Davis Wind Sensor</h1>
+            <h2>Real-time Data View</h2>
+        </div>
+        
+        <div class="data-section">
+            <h3>Environmental Measurements</h3>"""
+        
+        if latest_data["wind_data"]:
+            wind_data = latest_data["wind_data"]
+            html_content += f"""
+            <div class="measurement">
+                <span class="label">Wind Speed:</span>
+                <span class="value">{wind_data['wind_speed_knots']:.2f} knots ({wind_data['wind_speed_mps']:.2f} m/s)</span>
+            </div>
+            <div class="measurement">
+                <span class="label">Wind Direction:</span>
+                <span class="value">{wind_data['wind_direction_deg']:.1f}°</span>
+            </div>
+            <div class="measurement">
+                <span class="label">Rotations per Second:</span>
+                <span class="value">{wind_data['rotations_per_second']:.3f} RPS</span>
+            </div>"""
+        else:
+            html_content += """
+            <div class="measurement">
+                <span class="label">Status:</span>
+                <span class="value">No wind data available yet</span>
+            </div>"""
+        
+        html_content += """
+        </div>
+        
+        <div class="data-section">
+            <h3>Debug Information</h3>"""
+        
+        if latest_data["wind_data"]:
+            wind_data = latest_data["wind_data"]
+            html_content += f"""
+            <div class="measurement">
+                <span class="label">Iteration Count:</span>
+                <span class="value">{wind_data['iteration']}</span>
+            </div>
+            <div class="measurement">
+                <span class="label">RPM (Debounced):</span>
+                <span class="value">{wind_data['rpm_tops']}</span>
+            </div>
+            <div class="measurement">
+                <span class="label">RPM (Raw):</span>
+                <span class="value">{wind_data['rpm_raw']}</span>
+            </div>
+            <div class="measurement">
+                <span class="label">Potentiometer Value:</span>
+                <span class="value">{wind_data['pot_value']}</span>
+            </div>"""
+        else:
+            html_content += """
+            <div class="measurement">
+                <span class="label">Debug Data:</span>
+                <span class="value">Not available</span>
+            </div>"""
+        
+        html_content += """
+        </div>
+        
+        <div class="data-section">
+            <h3>System Status</h3>"""
+        
+        status_class = "status-ok" if latest_data["status"] == "running" else "status-error"
+        html_content += f"""
+            <div class="measurement">
+                <span class="label">Connection Status:</span>
+                <span class="value {status_class}">{latest_data["status"].title()}</span>
+            </div>
+            <div class="measurement">
+                <span class="label">Total Readings:</span>
+                <span class="value">{latest_data["total_readings"]}</span>
+            </div>
+            <div class="measurement">
+                <span class="label">Error Count:</span>
+                <span class="value">{latest_data["error_count"]}</span>
+            </div>
+            <div class="measurement">
+                <span class="label">Last Data Time:</span>
+                <span class="value">{data_time}</span>
+            </div>
+        </div>"""
+        
+        if latest_data["raw_line"]:
+            html_content += f"""
+        <div class="data-section">
+            <h3>Raw Serial Data</h3>
+            <div class="raw-data">{latest_data["raw_line"]}</div>
+        </div>"""
+        
+        html_content += f"""
+        <div class="timestamp">
+            Page generated: {current_time}<br>
+            Auto-refresh: Every 10 seconds
+        </div>
+    </div>
+</body>
+</html>"""
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        self.send_header('Pragma', 'no-cache')
+        self.send_header('Expires', '0')
+        self.end_headers()
+        self.wfile.write(html_content.encode('utf-8'))
 
 
 def start_web_server(port, logger):
@@ -316,6 +517,7 @@ def start_web_server(port, logger):
         server = HTTPServer(('', port), WebServerHandler)
         logger.info(f"Web server starting on http://0.0.0.0:{port}")
         logger.info(f"Dashboard available at: http://localhost:{port}")
+        logger.info(f"Simple HTML view: http://localhost:{port}/data.html")
         logger.info(f"JSON API available at: http://localhost:{port}/api/data")
         server.serve_forever()
     except Exception as e:

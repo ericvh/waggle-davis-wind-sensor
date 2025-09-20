@@ -87,6 +87,7 @@ The plugin includes an optional built-in web server that provides real-time moni
 - **JSON API**: RESTful endpoints for programmatic access
 - **Status Monitoring**: System status, error counts, and connection health
 - **Raw Data View**: See the actual serial data received from Arduino
+- **Simple HTML View**: Clean, formatted data display suitable for embedding or simple monitoring
 
 ### Usage
 
@@ -107,11 +108,24 @@ docker run -p 8080:8080 --device=/dev/ttyUSB0:/dev/ttyUSB0 --privileged \
   --web-server --web-port 8080
 ```
 
+**Simple HTML View** - Perfect for embedding in other pages or basic monitoring:
+```bash
+# Visit http://localhost:8080/data.html for clean data display
+# Auto-refreshes every 10 seconds
+# No controls or interactive elements - just the data
+```
+
 ### Web Endpoints
 
-- **Dashboard**: `http://localhost:8080/` - Interactive web interface
+- **Dashboard**: `http://localhost:8080/` - Interactive web interface with controls
+- **Simple HTML**: `http://localhost:8080/data.html` - Clean formatted data view (auto-refresh every 10s)
+- **Simple HTML**: `http://localhost:8080/simple` - Same as above (alternate URL)
 - **JSON Data**: `http://localhost:8080/api/data` - Complete data as JSON
 - **Status Only**: `http://localhost:8080/api/status` - System status information
+
+**Dashboard vs Simple View:**
+- **Dashboard** (`/`): Full-featured interface with manual refresh, toggle controls, responsive grid layout
+- **Simple View** (`/data.html`): Clean, minimal display optimized for embedding, kiosks, or basic monitoring
 
 ### API Response Format
 
