@@ -347,6 +347,95 @@ python3 tempest.py --calibrate  # Interactive mode
 python3 tempest.py             # Web interface at :8080/calibration
 ```
 
+### Continuous Calibration Mode
+
+The plugin supports **continuous automatic calibration** that runs in the background during normal operation, comparing Davis readings with Tempest data and making gradual adjustments every 15 minutes.
+
+#### How It Works
+
+1. **Background Operation**: Runs in a separate thread alongside normal Davis sensor data collection
+2. **Periodic Comparison**: Every 15 minutes (configurable), collects comparison samples from both sensors
+3. **Gradual Adjustments**: Applies only 30% of calculated adjustments per cycle to prevent sudden jumps
+4. **Confidence-Based**: Only applies adjustments when confidence levels meet threshold (default: 50%)
+5. **Live Updates**: Calibration factors are updated in real-time without interrupting data collection
+
+#### Usage
+
+**Enable continuous calibration with defaults:**
+```bash
+# 15-minute intervals, 20 samples per cycle, 30% adjustment rate
+python3 main.py --continuous-calibration
+```
+
+**Custom intervals and parameters:**
+```bash
+# 10-minute intervals with more conservative adjustments
+python3 main.py --continuous-calibration \
+  --continuous-interval 600 \
+  --continuous-samples 25 \
+  --continuous-adjustment-rate 0.1
+
+# Higher confidence threshold for more selective adjustments
+python3 main.py --continuous-calibration \
+  --continuous-confidence-threshold 0.7
+```
+
+**With web monitoring:**
+```bash
+# Continuous calibration + web interface for monitoring
+python3 main.py --continuous-calibration --web-server --web-port 8080
+```
+
+#### Configuration Options
+
+- `--continuous-calibration`: Enable continuous calibration mode
+- `--continuous-interval`: Time between calibration cycles in seconds (default: 900 = 15 minutes)
+- `--continuous-samples`: Number of samples per calibration cycle (default: 20)
+- `--continuous-sample-interval`: Seconds between samples during collection (default: 5)
+- `--continuous-confidence-threshold`: Minimum confidence for applying adjustments (default: 0.5)
+- `--continuous-adjustment-rate`: Percentage of adjustment to apply per cycle (default: 0.3 = 30%)
+
+#### Sample Output
+
+```
+🔄 Continuous calibration mode enabled
+🔄 Starting continuous calibration background thread...
+   Calibration interval: 900 seconds (15.0 minutes)
+   Samples per calibration: 20
+   Confidence threshold: 0.5
+   Adjustment rate: 30% per cycle
+✅ Tempest detected for continuous calibration: 8.2 knots, 145°
+
+📊 Starting continuous calibration at 14:30:15
+⏰ Next calibration scheduled for 14:45:15
+🧮 Calculating continuous calibration from 20 samples...
+📈 Calculated continuous calibration:
+   Speed factor: 1.0284 (confidence: 0.823)
+   Direction offset: -2.1° (confidence: 0.901)
+✅ Applied continuous calibration adjustment:
+   New speed factor: 1.0085
+   New direction offset: -0.63°
+```
+
+#### Benefits
+
+- **Automatic Drift Correction**: Compensates for sensor drift over time
+- **Environmental Adaptation**: Adjusts to changing conditions automatically
+- **Non-Disruptive**: Works alongside normal operation without interruption
+- **Conservative**: Gradual adjustments prevent over-correction
+- **Configurable**: All parameters tunable for different environments
+
+#### Comparison with Auto-Calibration
+
+| Feature | Auto-Calibration (`--auto-calibrate`) | Continuous Calibration (`--continuous-calibration`) |
+|---------|---------------------------------------|---------------------------------------------------|
+| **When** | Once at startup | Continuously every 15 minutes |
+| **Purpose** | Initial calibration setup | Long-term drift correction |
+| **Operation** | Blocks startup until complete | Runs in background during operation |
+| **Adjustments** | Immediate full application | Gradual 30% per cycle |
+| **Confidence** | High threshold (70%) required | Lower threshold (50%) acceptable |
+| **Use Case** | First-time setup, major recalibration | Long-term deployments, maintenance |
+
 ### Troubleshooting
 
 **No Tempest data received:**
@@ -488,6 +577,14 @@ python3 main.py [options]
 - `--min-calibration-confidence` : Minimum confidence required for auto-calibration (default: `0.7`)
 - `--no-firewall` : Skip automatic firewall setup for calibration
 
+### Continuous Calibration Arguments
+- `--continuous-calibration` : Enable continuous calibration mode with 15-minute intervals
+- `--continuous-interval` : Time between calibration cycles in seconds (default: `900`)
+- `--continuous-samples` : Number of samples per calibration cycle (default: `20`)
+- `--continuous-sample-interval` : Seconds between samples during collection (default: `5`)
+- `--continuous-confidence-threshold` : Minimum confidence for applying adjustments (default: `0.5`)
+- `--continuous-adjustment-rate` : Percentage of adjustment to apply per cycle (default: `0.3`)
+
 ### Web Interface Arguments
 - `--web-server` : Enable mini web server for monitoring
 - `--web-port` : Web server port (default: `8080`)
@@ -548,6 +645,19 @@ python3 main.py --direction-scale 1.333
 python3 main.py --web-server --web-port 8080
 ```
 
+**Enable continuous calibration:**
+```bash
+python3 main.py --continuous-calibration
+```
+
+**Continuous calibration with custom settings:**
+```bash
+python3 main.py --continuous-calibration \
+  --continuous-interval 600 \
+  --continuous-adjustment-rate 0.1 \
+  --continuous-confidence-threshold 0.7
+```
+
 ## Docker Deployment
 
 ### Multi-Mode Container Support
@@ -557,6 +667,7 @@ The Davis Wind Sensor Docker container supports multiple operation modes via env
 - **`main`** (default): Run the Davis wind sensor plugin
 - **`calibrate`**: Interactive Tempest calibration mode  
 - **`web`**: Tempest calibration web interface
+- **`continuous`**: Continuous auto-calibration mode (15-minute intervals)
 - **`test`**: Test Tempest UDP connection
 
 Multi-architecture Docker images are automatically built and published to GitHub Container Registry for both AMD64 and ARM64 platforms.
@@ -606,6 +717,12 @@ docker run -e DAVIS_MODE=web -p 8080:8080 --network host --privileged \
 ```
 Then open: http://localhost:8080/calibration
 
+**Continuous auto-calibration mode:**
+```bash
+docker run -e DAVIS_MODE=continuous --device=/dev/ttyACM2 --network host --privileged \
+  ghcr.io/ericvh/waggle-davis-wind-sensor:latest
+```
+
 **Test UDP connection:**
 ```bash
 docker run -e DAVIS_MODE=test --network host --privileged \
@@ -616,7 +733,7 @@ docker run -e DAVIS_MODE=test --network host --privileged \
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DAVIS_MODE` | `main` | Operation mode (`main`\|`calibrate`\|`web`\|`test`) |
+| `DAVIS_MODE` | `main` | Operation mode (`main`\|`calibrate`\|`web`\|`continuous`\|`test`) |
 | `TEMPEST_PORT` | `8080` | Web server port for calibration interface |
 | `NO_FIREWALL` | `false` | Skip automatic firewall setup (`true`\|`false`) |
 
