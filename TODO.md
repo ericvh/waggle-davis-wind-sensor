@@ -52,6 +52,12 @@
   - Added Docker deployment examples for continuous mode
   - Included comparison table between auto-calibration and continuous calibration
   - Complete user-facing documentation for the continuous calibration feature
+- [x] **Increase serial port timeout to prevent 'no data too quickly' errors**
+  - Updated default timeout from 5.0 to 30.0 seconds across all components
+  - Fixed main.py argparse default and help text
+  - Updated WindSensorReader constructor default timeout
+  - Fixed continuous calibration timeout in both main.py and tempest.py
+  - Updated README.md documentation to reflect new timeout default
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
