@@ -110,6 +110,10 @@
 - [x] Automated CI/CD pipeline setup
 - [x] Container registry publishing (GitHub Container Registry)
 - [x] Multi-architecture image builds (AMD64/ARM64)
+- [x] Multi-mode Docker container (main plugin, calibration, testing)
+- [x] Flexible entrypoint script with environment variable configuration
+- [x] Docker Compose configuration for easy deployment
+- [x] Automatic firewall management for UDP calibration in containers
 - [ ] Production deployment procedures
 - [ ] Monitoring and alerting setup
 - [ ] Backup and recovery procedures

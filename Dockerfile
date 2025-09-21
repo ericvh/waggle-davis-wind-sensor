@@ -12,12 +12,13 @@ RUN pip3 install --no-cache-dir -r /app/requirements.txt
 # Copy plugin source code
 COPY main.py /app/
 COPY tempest.py /app/
+COPY entrypoint.sh /app/
 
 # Set the working directory
 WORKDIR /app
 
-# Make the main script executable
-RUN chmod +x main.py
+# Make scripts executable
+RUN chmod +x main.py tempest.py entrypoint.sh
 
-# Set the entrypoint
-ENTRYPOINT ["python3", "main.py"] 
+# Set the flexible entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"] 

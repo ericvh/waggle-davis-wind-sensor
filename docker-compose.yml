@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # Main Davis wind sensor plugin
+  davis-plugin:
+    image: ghcr.io/ericvh/waggle-davis-wind-sensor:latest
+    container_name: davis-wind-sensor
+    environment:
+      - DAVIS_MODE=main
+    devices:
+      - /dev/ttyACM2:/dev/ttyACM2
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
+    # Uncomment the following lines if using MQTT broker
+    # environment:
+    #   - WAGGLE_PLUGIN_HOST=mqtt-broker
+    #   - WAGGLE_PLUGIN_PORT=1883
+    # depends_on:
+    #   - mqtt-broker
+
+  # Tempest calibration web interface
+  tempest-calibration-web:
+    image: ghcr.io/ericvh/waggle-davis-wind-sensor:latest
+    container_name: tempest-calibration-web
+    environment:
+      - DAVIS_MODE=web
+      - TEMPEST_PORT=8080
+      - NO_FIREWALL=false
+    ports:
+      - "8080:8080"
+    network_mode: host  # Required for UDP broadcasts
+    privileged: true   # Required for firewall management
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    restart: "no"  # Manual start for calibration sessions
+    profiles:
+      - calibration
+
+  # Tempest connection test
+  tempest-test:
+    image: ghcr.io/ericvh/waggle-davis-wind-sensor:latest
+    container_name: tempest-test
+    environment:
+      - DAVIS_MODE=test
+      - NO_FIREWALL=false
+    network_mode: host  # Required for UDP broadcasts
+    privileged: true   # Required for firewall management
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    restart: "no"  # One-time test
+    profiles:
+      - test
+
+  # Optional: MQTT broker for plugin communication
+  # Uncomment if you don't have an existing MQTT broker
+  # mqtt-broker:
+  #   image: eclipse-mosquitto:2
+  #   container_name: davis-mqtt
+  #   ports:
+  #     - "1883:1883"
+  #     - "9001:9001"
+  #   volumes:
+  #     - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+  #   restart: unless-stopped
+  #   profiles:
+  #     - mqtt 

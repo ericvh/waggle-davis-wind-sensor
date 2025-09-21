@@ -472,16 +472,27 @@ python3 main.py --web-server --web-port 8080
 
 ## Docker Deployment
 
-### Using Pre-built Images (Recommended)
+### Multi-Mode Container Support
+
+The Davis Wind Sensor Docker container supports multiple operation modes via environment variables:
+
+- **`main`** (default): Run the Davis wind sensor plugin
+- **`calibrate`**: Interactive Tempest calibration mode  
+- **`web`**: Tempest calibration web interface
+- **`test`**: Test Tempest UDP connection
 
 Multi-architecture Docker images are automatically built and published to GitHub Container Registry for both AMD64 and ARM64 platforms.
+
+### Using Pre-built Images (Recommended)
 
 **Pull the latest image:**
 ```bash
 docker pull ghcr.io/ericvh/waggle-davis-wind-sensor:latest
 ```
 
-**Run with pre-built image:**
+#### Main Davis Wind Sensor Plugin
+
+**Basic usage:**
 ```bash
 docker run --device=/dev/ttyACM2:/dev/ttyACM2 --privileged \
   ghcr.io/ericvh/waggle-davis-wind-sensor:latest
@@ -495,9 +506,67 @@ docker run --device=/dev/ttyACM2:/dev/ttyACM2 --privileged \
   --calibration-factor 1.05 --direction-offset -15.0
 ```
 
-**Using specific version:**
+#### Tempest Calibration Modes
+
+**Interactive calibration (console-based):**
 ```bash
-docker pull ghcr.io/ericvh/waggle-davis-wind-sensor:v1.0.0
+docker run -e DAVIS_MODE=calibrate -it --network host --privileged \
+  ghcr.io/ericvh/waggle-davis-wind-sensor:latest
+```
+
+**Web-based calibration interface:**
+```bash
+docker run -e DAVIS_MODE=web -p 8080:8080 --network host --privileged \
+  ghcr.io/ericvh/waggle-davis-wind-sensor:latest
+```
+Then open: http://localhost:8080/calibration
+
+**Test UDP connection:**
+```bash
+docker run -e DAVIS_MODE=test --network host --privileged \
+  ghcr.io/ericvh/waggle-davis-wind-sensor:latest
+```
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DAVIS_MODE` | `main` | Operation mode (`main`\|`calibrate`\|`web`\|`test`) |
+| `TEMPEST_PORT` | `8080` | Web server port for calibration interface |
+| `NO_FIREWALL` | `false` | Skip automatic firewall setup (`true`\|`false`) |
+
+#### Docker Network Requirements
+
+**For Tempest calibration modes:**
+- Use `--network host` to receive UDP broadcasts from Tempest station
+- Use `--privileged` for automatic firewall management
+- Alternative: Use `-e NO_FIREWALL=true` and manage firewall manually
+
+### Docker Compose (Recommended)
+
+**Download the compose file:**
+```bash
+curl -O https://raw.githubusercontent.com/ericvh/waggle-davis-wind-sensor/main/docker-compose.yml
+```
+
+**Run main Davis plugin:**
+```bash
+docker-compose up davis-plugin
+```
+
+**Run calibration web interface:**
+```bash
+docker-compose --profile calibration up tempest-calibration-web
+```
+
+**Test Tempest connection:**
+```bash
+docker-compose --profile test up tempest-test
+```
+
+**Stop all services:**
+```bash
+docker-compose down
 ```
 
 ### Building Locally
@@ -507,10 +576,26 @@ docker pull ghcr.io/ericvh/waggle-davis-wind-sensor:v1.0.0
 docker build -t davis-wind-sensor-plugin .
 ```
 
-**Run locally built image:**
+**Test all modes:**
 ```bash
+# Main plugin
 docker run --device=/dev/ttyACM2:/dev/ttyACM2 --privileged davis-wind-sensor-plugin
+
+# Calibration test
+docker run -e DAVIS_MODE=test --network host --privileged davis-wind-sensor-plugin
+
+# Web calibration
+docker run -e DAVIS_MODE=web -p 8080:8080 --network host --privileged davis-wind-sensor-plugin
 ```
+
+### Container Help
+
+**Get container usage help:**
+```bash
+docker run ghcr.io/ericvh/waggle-davis-wind-sensor:latest --help
+```
+
+This displays all available modes, environment variables, and Docker networking requirements.
 
 ## Hardware Requirements
 
