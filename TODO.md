@@ -78,6 +78,12 @@
   - Added thread-safe data sharing methods (add_data_sample, is_collecting_samples)
   - Modified main loop to feed data to continuous calibrator when collecting samples
   - Ensures single serial connection eliminates port access conflicts
+- [x] **Improve git workflow documentation for atomic commits**
+  - Updated DEVELOPMENT.md Commit Process section with TODO.md workflow guidance
+  - Added DO/DON'T examples for atomic commits vs separate TODO commits
+  - Enhanced TODO Best Practices with commit workflow guidance
+  - Updated File Update Checklist to include TODO.md in commits
+  - Establishes clean git history with atomic commits for related changes
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware

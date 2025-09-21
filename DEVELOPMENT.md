@@ -222,16 +222,27 @@ for long-term deployments without manual intervention.
 
 ### Commit Process
 
-1. **Stage Your Changes**
+1. **Stage Your Changes AND TODO.md Updates**
    ```bash
+   # Make your code changes
    git add filename1.py filename2.sh
-   # OR stage all changes
+   
+   # Update TODO.md to reflect completed work
+   git add TODO.md
+   
+   # OR stage all changes together
    git add .
    ```
 
-2. **Commit with Descriptive Message**
+2. **Commit with Descriptive Message (Include TODO.md in same commit)**
    ```bash
-   git commit -m "Your descriptive commit message"
+   git commit -m "Your descriptive commit message
+
+   Implementation details:
+   - Feature 1: Description of changes
+   - Feature 2: Updated TODO.md to mark task completed
+   
+   This ensures atomic commits where TODO tracking stays synchronized."
    ```
 
 3. **Push Changes**
@@ -240,6 +251,22 @@ for long-term deployments without manual intervention.
    # OR if on feature branch
    git push origin feature/branch-name
    ```
+
+#### ✅ DO: Atomic Commits
+```bash
+# Good: Include TODO.md update with the actual change
+git add main.py TODO.md
+git commit -m "Fix serial port conflict and mark TODO completed"
+```
+
+#### ❌ DON'T: Separate TODO Commits
+```bash
+# Avoid: Separate commits for TODO updates create noise
+git add main.py
+git commit -m "Fix serial port conflict"
+git add TODO.md  
+git commit -m "Update TODO.md with completion"  # ← Creates commit noise
+```
 
 ## 📋 TODO Management
 
@@ -274,6 +301,7 @@ for long-term deployments without manual intervention.
 - **Prioritize**: Use the priority sections appropriately
 - **Update Regularly**: Keep TODO.md current with each development session
 - **Link Related Tasks**: Group related tasks together
+- **Commit with Changes**: Always include TODO.md updates in the same commit as the actual work, not as separate commits
 
 ## 🧪 Testing Guidelines
 
@@ -483,7 +511,8 @@ deactivate
 - [ ] Update TODO.md with progress
 - [ ] Test syntax with py_compile
 - [ ] Update README.md if user-facing changes
-- [ ] Commit with descriptive message
+- [ ] Stage all changes including TODO.md updates (`git add . `)
+- [ ] Commit with descriptive message (include TODO.md in same commit)
 - [ ] Push changes to repository
 
 This development guide should be updated as the project evolves and new patterns emerge. 
