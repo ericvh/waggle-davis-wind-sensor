@@ -354,11 +354,12 @@ The plugin supports **continuous automatic calibration** that runs in the backgr
 #### How It Works
 
 1. **Background Operation**: Runs in a separate thread alongside normal Davis sensor data collection
-2. **Periodic Comparison**: Every 15 minutes (configurable), collects comparison samples from both sensors
-3. **Initial Bootstrap**: Uses lower confidence threshold (30%) for first calibration to establish baseline
-4. **Gradual Adjustments**: Applies only 30% of calculated adjustments per cycle to prevent sudden jumps
-5. **Confidence-Based**: Only applies adjustments when confidence levels meet threshold (default: 50%)
-6. **Live Updates**: Calibration factors are updated in real-time without interrupting data collection
+2. **Aggressive Bootstrap**: Retries initial calibration every 3 minutes until confident baseline established
+3. **Periodic Comparison**: Every 15 minutes (configurable), collects comparison samples from both sensors
+4. **Initial Bootstrap**: Uses lower confidence threshold (30%) and full adjustment rate for first calibration
+5. **Gradual Adjustments**: Applies only 30% of calculated adjustments per cycle to prevent sudden jumps
+6. **Confidence-Based**: Only applies adjustments when confidence levels meet threshold (default: 50%)
+7. **Live Updates**: Calibration factors are updated in real-time without interrupting data collection
 
 #### Usage
 
@@ -384,6 +385,10 @@ python3 main.py --continuous-calibration \
 python3 main.py --continuous-calibration \
   --initial-calibration-confidence 0.2 \
   --continuous-confidence-threshold 0.8
+
+# Faster bootstrap retries for quicker initial calibration
+python3 main.py --continuous-calibration \
+  --initial-calibration-retry-interval 120
 ```
 
 **With web monitoring:**
@@ -406,23 +411,25 @@ python3 main.py --continuous-calibration --web-server --web-port 8080
 ```
 🔄 Continuous calibration mode enabled
 🔄 Starting continuous calibration background thread...
-   Calibration interval: 900 seconds (15.0 minutes)
+   Ongoing calibration interval: 900 seconds (15.0 minutes)
+   Initial calibration retry interval: 180 seconds (3.0 minutes)
    Samples per calibration: 20
    Confidence threshold: 0.5
    Initial confidence threshold: 0.3
    Adjustment rate: 30% per cycle
 ✅ Tempest detected for continuous calibration: 8.2 knots, 145°
 
-📊 Starting continuous calibration at 14:30:15
-⏰ Next calibration scheduled for 14:45:15
+📊 Starting initial bootstrap calibration at 14:30:15
+⏰ Next calibration scheduled for 14:33:15 (3.0 min interval)
 🧮 Calculating continuous calibration from 20 samples...
 📈 Calculated continuous calibration:
    Speed factor: 1.0284 (confidence: 0.423)
    Direction offset: -2.1° (confidence: 0.456)
    Using initial calibration confidence threshold: 0.3
+   Using full adjustment rate for bootstrap: 100%
 ✅ Applied initial calibration (bootstrap):
-   New speed factor: 1.0085
-   New direction offset: -0.63°
+   New speed factor: 1.0284
+   New direction offset: -2.1°
 ```
 
 #### Benefits
@@ -593,6 +600,7 @@ python3 main.py [options]
 - `--continuous-confidence-threshold` : Minimum confidence for applying adjustments (default: `0.5`)
 - `--continuous-adjustment-rate` : Percentage of adjustment to apply per cycle (default: `0.3`)
 - `--initial-calibration-confidence` : Lower confidence threshold for initial calibration bootstrap (default: `0.3`)
+- `--initial-calibration-retry-interval` : Retry interval in seconds for initial calibration when confidence is low (default: `180` = 3 minutes)
 
 ### Web Interface Arguments
 - `--web-server` : Enable mini web server for monitoring

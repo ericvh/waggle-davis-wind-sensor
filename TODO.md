@@ -90,6 +90,12 @@
   - Added logging to show which adjustment rate is being used (full vs gradual)
   - Ensures bootstrap calibration establishes good baseline quickly
   - Maintains conservative gradual adjustments for long-term stability
+- [x] **Implement aggressive retry for initial calibration until confident baseline established**
+  - Initial calibration now retries every 3 minutes (configurable) when confidence is low
+  - Ongoing calibration uses normal 15-minute intervals after successful bootstrap
+  - Added --initial-calibration-retry-interval argument for customization
+  - Enhanced logging to distinguish initial vs ongoing calibration attempts
+  - Prevents long delays in establishing good baseline calibration
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware

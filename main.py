@@ -597,6 +597,12 @@ def parse_args():
         default=0.3,
         help="Lower confidence threshold for initial calibration bootstrap (default: 0.3)"
     )
+    parser.add_argument(
+        "--initial-calibration-retry-interval", 
+        type=int, 
+        default=180,
+        help="Retry interval in seconds for initial calibration when confidence is low (default: 180 = 3 minutes)"
+    )
     return parser.parse_args()
 
 
@@ -1479,7 +1485,8 @@ class ContinuousCalibrator:
             return
             
         self.logger.info("🔄 Starting continuous calibration background thread...")
-        self.logger.info(f"   Calibration interval: {self.args.continuous_interval} seconds ({self.args.continuous_interval/60:.1f} minutes)")
+        self.logger.info(f"   Ongoing calibration interval: {self.args.continuous_interval} seconds ({self.args.continuous_interval/60:.1f} minutes)")
+        self.logger.info(f"   Initial calibration retry interval: {self.args.initial_calibration_retry_interval} seconds ({self.args.initial_calibration_retry_interval/60:.1f} minutes)")
         self.logger.info(f"   Samples per calibration: {self.args.continuous_samples}")
         self.logger.info(f"   Sample interval: {self.args.continuous_sample_interval} seconds")
         self.logger.info(f"   Confidence threshold: {self.args.continuous_confidence_threshold}")
@@ -1616,10 +1623,20 @@ class ContinuousCalibrator:
         # Main continuous calibration loop
         while not self.stop_event.is_set():
             try:
-                next_calibration_time = datetime.now() + timedelta(seconds=self.args.continuous_interval)
+                # Use different intervals for initial vs ongoing calibration
+                if not self.has_initial_calibration:
+                    # Aggressive retry for bootstrap calibration (configurable, default 3 minutes)
+                    calibration_interval = self.args.initial_calibration_retry_interval
+                    calibration_type = "initial bootstrap"
+                else:
+                    # Normal interval for ongoing calibration (15 minutes default)
+                    calibration_interval = self.args.continuous_interval
+                    calibration_type = "ongoing"
                 
-                self.logger.info(f"📊 Starting continuous calibration at {datetime.now().strftime('%H:%M:%S')}")
-                self.logger.info(f"⏰ Next calibration scheduled for {next_calibration_time.strftime('%H:%M:%S')}")
+                next_calibration_time = datetime.now() + timedelta(seconds=calibration_interval)
+                
+                self.logger.info(f"📊 Starting {calibration_type} calibration at {datetime.now().strftime('%H:%M:%S')}")
+                self.logger.info(f"⏰ Next calibration scheduled for {next_calibration_time.strftime('%H:%M:%S')} ({calibration_interval/60:.1f} min interval)")
                 
                 # Collect calibration samples
                 davis_readings, tempest_readings = self._collect_calibration_samples()
@@ -1681,13 +1698,22 @@ class ContinuousCalibrator:
                             self.logger.info(f"   New speed factor: {adjusted_speed_factor:.4f}")
                             self.logger.info(f"   New direction offset: {adjusted_direction_offset:.2f}°")
                         else:
-                            self.logger.info(f"⚠️  Low confidence - keeping current calibration")
+                            if not self.has_initial_calibration:
+                                self.logger.info(f"⚠️  Low confidence for initial calibration - will retry in {calibration_interval/60:.1f} minutes")
+                                self.logger.info(f"   Need confidence ≥ {confidence_threshold:.2f}, got speed={speed_confidence:.3f}, direction={direction_confidence:.3f}")
+                                self.logger.info(f"   Retrying bootstrap calibration more frequently until confident baseline established")
+                            else:
+                                self.logger.info(f"⚠️  Low confidence for ongoing calibration - keeping current calibration")
                             self.logger.info(f"   Current speed factor: {self.current_speed_factor:.4f}")
                             self.logger.info(f"   Current direction offset: {self.current_direction_offset:.2f}°")
                     else:
                         self.logger.warning("⚠️  Could not calculate continuous calibration factors - keeping current calibration")
                 else:
-                    self.logger.warning(f"⚠️  Insufficient samples ({len(davis_readings)}) for continuous calibration - need at least 3")
+                    if not self.has_initial_calibration:
+                        self.logger.warning(f"⚠️  Insufficient samples ({len(davis_readings)}) for initial calibration - need at least 3")
+                        self.logger.warning(f"   Will retry bootstrap calibration in {calibration_interval/60:.1f} minutes")
+                    else:
+                        self.logger.warning(f"⚠️  Insufficient samples ({len(davis_readings)}) for ongoing calibration - need at least 3")
                 
                 # Wait until next calibration time
                 sleep_time = (next_calibration_time - datetime.now()).total_seconds()
