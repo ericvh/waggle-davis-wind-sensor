@@ -58,6 +58,13 @@
   - Updated WindSensorReader constructor default timeout
   - Fixed continuous calibration timeout in both main.py and tempest.py
   - Updated README.md documentation to reflect new timeout default
+- [x] **Initial calibration confidence for bootstrap functionality**
+  - Added --initial-calibration-confidence argument with 0.3 default
+  - ContinuousCalibrator tracks first calibration attempt with has_initial_calibration flag
+  - Uses lower confidence threshold (30%) for first calibration to establish baseline
+  - Auto-calibration fallback: tries initial confidence if main confidence fails
+  - Updated documentation with bootstrap examples and sample output
+  - Enables easier system startup with imperfect initial conditions
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
