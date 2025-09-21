@@ -20,11 +20,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from waggle.plugin import Plugin
 
-try:
-    from bs4 import BeautifulSoup
-    HAS_BEAUTIFULSOUP = True
-except ImportError:
-    HAS_BEAUTIFULSOUP = False
+
 
 # Tempest calibration functionality is now integrated directly
 HAS_TEMPEST = True
@@ -422,218 +418,7 @@ class WindDataCollector:
         return averaged_data
 
 
-class TempestCalibrator:
-    """Calibration helper using Tempest weather station data"""
-    
-    def __init__(self, station_id, logger):
-        self.station_id = station_id
-        self.logger = logger
-        self.base_url = f"https://tempestwx.com/station/{station_id}"
-        self.api_url = f"https://swd.weatherflow.com/swd/rest/observations/station/{station_id}"
-        self.has_beautifulsoup = HAS_BEAUTIFULSOUP
-        
-    def fetch_tempest_data(self):
-        """Fetch current wind data from Tempest station"""
-        try:
-            # Try the WeatherFlow API first
-            headers = {'User-Agent': 'Davis-Wind-Sensor-Plugin/1.0'}
-            response = requests.get(self.api_url, headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if 'obs' in data and len(data['obs']) > 0:
-                    latest_obs = data['obs'][0]  # Most recent observation
-                    
-                    # WeatherFlow API format: [timestamp, wind_lull, wind_avg, wind_gust, wind_direction, ...]
-                    if len(latest_obs) >= 5:
-                        wind_speed_mps = latest_obs[2]  # wind_avg in m/s
-                        wind_direction = latest_obs[4]  # wind_direction in degrees
-                        wind_gust_mps = latest_obs[3]   # wind_gust in m/s
-                        
-                        # Convert m/s to knots
-                        wind_speed_knots = wind_speed_mps * 1.94384
-                        wind_gust_knots = wind_gust_mps * 1.94384
-                        
-                        # WeatherFlow API returns UTC timestamps
-                        utc_timestamp = datetime.fromtimestamp(latest_obs[0], tz=timezone.utc)
-                        local_timestamp = utc_timestamp.astimezone()
-                        
-                        return {
-                            'wind_speed_mps': wind_speed_mps,
-                            'wind_speed_knots': wind_speed_knots,
-                            'wind_direction_deg': wind_direction,
-                            'wind_gust_knots': wind_gust_knots,
-                            'timestamp_utc': utc_timestamp,
-                            'timestamp_local': local_timestamp,
-                            'timestamp': local_timestamp,  # For backward compatibility
-                            'data_age_seconds': (datetime.now(timezone.utc) - utc_timestamp).total_seconds(),
-                            'source': 'tempest_api'
-                        }
-            
-            self.logger.debug(f"Could not fetch Tempest data via API (status: {response.status_code})")
-            # Fallback to web scraping
-            return self._scrape_tempest_webpage()
-            
-        except requests.RequestException as e:
-            self.logger.debug(f"API request failed: {e}, trying web scraping")
-            return self._scrape_tempest_webpage()
-        except (KeyError, IndexError, ValueError) as e:
-            self.logger.debug(f"Error parsing API data: {e}, trying web scraping")
-            return self._scrape_tempest_webpage()
-    
-    def _scrape_tempest_webpage(self):
-        """Scrape wind data from Tempest public webpage as fallback"""
-        if not self.has_beautifulsoup:
-            self.logger.error("BeautifulSoup4 not available for web scraping. Install with: pip install beautifulsoup4")
-            return None
-        
-        try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            response = requests.get(self.base_url, headers=headers, timeout=15)
-            
-            if response.status_code != 200:
-                self.logger.error(f"Could not fetch Tempest webpage (status: {response.status_code})")
-                return None
-            
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Look for wind data in the page
-            wind_speed_mph = None
-            wind_direction = None
-            wind_gust_mph = None
-            
-            # Try to find wind speed and direction data
-            # Tempest pages often have data in script tags or data attributes
-            
-            # Method 1: Look for wind data in text content
-            page_text = soup.get_text()
-            
-            # Look for wind speed patterns (mph)
-            wind_speed_match = re.search(r'Wind.*?(\d+(?:\.\d+)?)\s*mph', page_text, re.IGNORECASE)
-            if wind_speed_match:
-                wind_speed_mph = float(wind_speed_match.group(1))
-            
-            # Look for wind direction patterns
-            wind_dir_match = re.search(r'(?:Wind.*?Direction.*?|Direction.*?)(\d+(?:\.\d+)?)\s*°?', page_text, re.IGNORECASE)
-            if wind_dir_match:
-                wind_direction = float(wind_dir_match.group(1))
-            
-            # Look for gust patterns
-            gust_match = re.search(r'Gust.*?(\d+(?:\.\d+)?)\s*mph', page_text, re.IGNORECASE)
-            if gust_match:
-                wind_gust_mph = float(gust_match.group(1))
-            
-            # Method 2: Look in script tags for JSON data
-            if wind_speed_mph is None or wind_direction is None:
-                scripts = soup.find_all('script')
-                for script in scripts:
-                    if script.string and 'wind' in script.string.lower():
-                        # Try to extract wind data from JavaScript variables
-                        wind_speed_js = re.search(r'wind.*?speed.*?["\']?(\d+(?:\.\d+)?)', script.string, re.IGNORECASE)
-                        wind_dir_js = re.search(r'wind.*?dir.*?["\']?(\d+(?:\.\d+)?)', script.string, re.IGNORECASE)
-                        
-                        if wind_speed_js and wind_speed_mph is None:
-                            wind_speed_mph = float(wind_speed_js.group(1))
-                        if wind_dir_js and wind_direction is None:
-                            wind_direction = float(wind_dir_js.group(1))
-            
-            # Method 3: Look for data attributes and specific elements
-            if wind_speed_mph is None or wind_direction is None:
-                # Look for elements with wind-related classes or data attributes
-                wind_elements = soup.find_all(attrs={'class': re.compile(r'wind', re.I)})
-                wind_elements.extend(soup.find_all(attrs={'data-wind': True}))
-                
-                for element in wind_elements:
-                    text = element.get_text()
-                    if 'mph' in text.lower() and wind_speed_mph is None:
-                        speed_match = re.search(r'(\d+(?:\.\d+)?)', text)
-                        if speed_match:
-                            wind_speed_mph = float(speed_match.group(1))
-                    
-                    if '°' in text and wind_direction is None:
-                        dir_match = re.search(r'(\d+(?:\.\d+)?)', text)
-                        if dir_match:
-                            wind_direction = float(dir_match.group(1))
-            
-            if wind_speed_mph is not None and wind_direction is not None:
-                # Convert mph to m/s and knots
-                wind_speed_mps = wind_speed_mph * 0.44704  # mph to m/s
-                wind_speed_knots = wind_speed_mph * 0.868976  # mph to knots
-                
-                wind_gust_knots = None
-                if wind_gust_mph is not None:
-                    wind_gust_knots = wind_gust_mph * 0.868976
-                
-                current_time = datetime.now(timezone.utc)
-                
-                self.logger.info(f"Successfully scraped Tempest data: {wind_speed_mph:.1f} mph ({wind_speed_knots:.1f} knots), {wind_direction:.0f}°")
-                
-                return {
-                    'wind_speed_mps': wind_speed_mps,
-                    'wind_speed_knots': wind_speed_knots,
-                    'wind_direction_deg': wind_direction,
-                    'wind_gust_knots': wind_gust_knots,
-                    'timestamp_utc': current_time,
-                    'timestamp_local': current_time.astimezone(),
-                    'timestamp': current_time.astimezone(),
-                    'data_age_seconds': 0.0,  # Assume current for scraped data
-                    'source': 'tempest_webpage'
-                }
-            else:
-                self.logger.warning(f"Could not extract wind data from Tempest webpage. Found speed: {wind_speed_mph}, direction: {wind_direction}")
-                return None
-                
-        except requests.RequestException as e:
-            self.logger.error(f"Error scraping Tempest webpage: {e}")
-            return None
-        except Exception as e:
-            self.logger.error(f"Error parsing Tempest webpage: {e}")
-            return None
-    
-    def calculate_calibration(self, davis_readings, tempest_readings):
-        """Calculate calibration factors based on Davis vs Tempest comparison"""
-        if not davis_readings or not tempest_readings:
-            return None
-        
-        # Calculate average differences
-        speed_ratios = []
-        direction_diffs = []
-        
-        for davis, tempest in zip(davis_readings, tempest_readings):
-            if davis['wind_speed_knots'] > 0.1 and tempest['wind_speed_knots'] > 0.1:
-                speed_ratio = tempest['wind_speed_knots'] / davis['wind_speed_knots']
-                speed_ratios.append(speed_ratio)
-            
-            # Calculate direction difference (handle wrap-around)
-            dir_diff = tempest['wind_direction_deg'] - davis['wind_direction_deg']
-            if dir_diff > 180:
-                dir_diff -= 360
-            elif dir_diff < -180:
-                dir_diff += 360
-            direction_diffs.append(dir_diff)
-        
-        if not speed_ratios:
-            return None
-        
-        # Calculate recommended calibration values
-        avg_speed_ratio = sum(speed_ratios) / len(speed_ratios)
-        avg_direction_offset = sum(direction_diffs) / len(direction_diffs)
-        
-        # Calculate confidence metrics
-        speed_std = (sum((r - avg_speed_ratio) ** 2 for r in speed_ratios) / len(speed_ratios)) ** 0.5
-        direction_std = (sum((d - avg_direction_offset) ** 2 for d in direction_diffs) / len(direction_diffs)) ** 0.5
-        
-        return {
-            'speed_calibration_factor': avg_speed_ratio,
-            'direction_offset': avg_direction_offset,
-            'speed_confidence': 1.0 / (1.0 + speed_std),  # Higher is better
-            'direction_confidence': 1.0 / (1.0 + direction_std / 10.0),  # Scale direction std
-            'sample_count': len(speed_ratios),
-            'speed_std_dev': speed_std,
-            'direction_std_dev': direction_std
-        }
+
 
 
 class WebServerHandler(BaseHTTPRequestHandler):
@@ -1253,36 +1038,7 @@ def run_auto_calibration(args, logger):
     
     return None, None
 
-def run_manual_tempest_calibration(args, logger, davis_speed, davis_direction):
-    """Run Tempest calibration with manual Davis reading input"""
-    if not HAS_TEMPEST:
-        return None, None
-    
-    # Get current Tempest data
-    tempest_wind = tempest.get_current_tempest_wind()
-    if not tempest_wind:
-        return None, None
-    
-    # Create reading pairs for calibration
-    davis_readings = [{
-        'wind_speed_knots': davis_speed,
-        'wind_direction_deg': davis_direction
-    }]
-    tempest_readings = [tempest_wind]
-    
-    # Calculate calibration factors
-    calibration = tempest.calculate_calibration_factors(davis_readings, tempest_readings)
-    
-    if calibration and calibration['sample_count'] > 0:
-        logger.info(f"📊 Calibration calculated from comparison:")
-        logger.info(f"   Davis: {davis_speed:.1f} knots, {davis_direction:.0f}°")
-        logger.info(f"   Tempest: {tempest_wind['wind_speed_knots']:.1f} knots, {tempest_wind['wind_direction_deg']:.0f}°")
-        logger.info(f"   Speed factor: {calibration['speed_calibration_factor']:.4f}")
-        logger.info(f"   Direction offset: {calibration['direction_offset']:.2f}°")
-        
-        return calibration['speed_calibration_factor'], calibration['direction_offset']
-    
-    return None, None
+
 
 def main():
     args = parse_args()
@@ -1340,17 +1096,7 @@ def main():
     # Initialize data collector for averaged reporting
     data_collector = WindDataCollector(args.reporting_interval)
     
-    # Initialize Tempest calibrator if requested
-    tempest_calibrator = None
-    if args.tempest_station:
-        tempest_calibrator = TempestCalibrator(args.tempest_station, logger)
-        logger.info(f"Tempest calibration enabled using station {args.tempest_station}")
-        logger.info(f"Tempest station URL: https://tempestwx.com/station/{args.tempest_station}")
-        logger.info(f"System timezone: {datetime.now().astimezone().tzinfo}")
-        logger.info(f"Tempest data timezone: UTC (converted to local for comparison)")
-        if args.tempest_calibration:
-            logger.info(f"Automatic calibration mode: will collect {args.calibration_samples} samples")
-            logger.info("Note: Calibration compares real-time readings, timezone differences are handled automatically")
+
     
     # Start web server if requested
     if args.web_server:
@@ -1370,14 +1116,7 @@ def main():
         global latest_data
         latest_data["status"] = "connecting"
         
-        # Tempest calibration data collection
-        calibration_data = {
-            'davis_readings': [],
-            'tempest_readings': [],
-            'samples_collected': 0,
-            'calibration_active': args.tempest_calibration,
-            'calibration_complete': False
-        }
+
         
         # Main loop with automatic reconnection
         while True:
@@ -1410,63 +1149,7 @@ def main():
                                     # Add reading to data collector for averaging
                                     data_collector.add_reading(wind_data)
                                     
-                                    # Tempest calibration data collection
-                                    if (tempest_calibrator and calibration_data['calibration_active'] and 
-                                        not calibration_data['calibration_complete']):
-                                        
-                                        # Fetch current Tempest data
-                                        tempest_data = tempest_calibrator.fetch_tempest_data()
-                                        if tempest_data:
-                                            calibration_data['davis_readings'].append(wind_data)
-                                            calibration_data['tempest_readings'].append(tempest_data)
-                                            calibration_data['samples_collected'] += 1
-                                            
-                                            logger.info(f"Calibration sample {calibration_data['samples_collected']}/{args.calibration_samples}: "
-                                                       f"Davis: {wind_data['wind_speed_knots']:.2f}kts {wind_data['wind_direction_deg']:.1f}°, "
-                                                       f"Tempest: {tempest_data['wind_speed_knots']:.2f}kts {tempest_data['wind_direction_deg']:.1f}° "
-                                                       f"(age: {tempest_data['data_age_seconds']:.1f}s)")
-                                            
-                                            # Check if we have enough samples for calibration
-                                            if calibration_data['samples_collected'] >= args.calibration_samples:
-                                                calibration_result = tempest_calibrator.calculate_calibration(
-                                                    calibration_data['davis_readings'],
-                                                    calibration_data['tempest_readings']
-                                                )
-                                                
-                                                if calibration_result:
-                                                    logger.info("=" * 60)
-                                                    logger.info("TEMPEST CALIBRATION RESULTS")
-                                                    logger.info("=" * 60)
-                                                    logger.info(f"Recommended calibration factor: {calibration_result['speed_calibration_factor']:.4f}")
-                                                    logger.info(f"Recommended direction offset: {calibration_result['direction_offset']:.2f}°")
-                                                    logger.info(f"Speed confidence: {calibration_result['speed_confidence']:.3f}")
-                                                    logger.info(f"Direction confidence: {calibration_result['direction_confidence']:.3f}")
-                                                    logger.info(f"Sample count: {calibration_result['sample_count']}")
-                                                    logger.info("=" * 60)
-                                                    logger.info("To apply these calibrations, restart with:")
-                                                    logger.info(f"--calibration-factor {calibration_result['speed_calibration_factor']:.4f} "
-                                                               f"--direction-offset {calibration_result['direction_offset']:.2f}")
-                                                    logger.info("=" * 60)
-                                                    
-                                                    # Publish calibration data
-                                                    plugin.publish("davis.calibration.speed_factor", calibration_result['speed_calibration_factor'],
-                                                                 meta={"description": "Recommended speed calibration factor from Tempest comparison", 
-                                                                       "confidence": f"{calibration_result['speed_confidence']:.3f}",
-                                                                       "samples": str(calibration_result['sample_count'])})
-                                                    plugin.publish("davis.calibration.direction_offset", calibration_result['direction_offset'],
-                                                                 meta={"description": "Recommended direction offset from Tempest comparison", 
-                                                                       "confidence": f"{calibration_result['direction_confidence']:.3f}",
-                                                                       "samples": str(calibration_result['sample_count'])})
-                                                else:
-                                                    logger.warning("Could not calculate calibration - insufficient valid data")
-                                                
-                                                calibration_data['calibration_complete'] = True
-                                                logger.info("Calibration complete - continuing normal operation...")
-                                        else:
-                                            logger.debug("Could not fetch Tempest data for calibration sample")
-                                        
-                                        # Add delay between calibration samples to avoid rate limiting
-                                        time.sleep(2.0)
+
                                     
                                     # Immediate debug measurements - Davis-specific data (for web interface)
                                     plugin.publish("davis.wind.rps", wind_data['rotations_per_second'], 
