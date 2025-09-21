@@ -1200,9 +1200,10 @@ def continuous_calibration(args):
                     print(f"   Speed factor: {new_speed_factor:.4f} (confidence: {speed_confidence:.3f})")
                     print(f"   Direction offset: {new_direction_offset:.2f}° (confidence: {direction_confidence:.3f})")
                     
-                    # Apply calibration if confidence is reasonable
-                    min_confidence = 0.5  # Lower threshold for continuous mode
-                    if speed_confidence >= min_confidence and direction_confidence >= min_confidence:
+                    # Apply calibration if confidence is reasonable (separate thresholds for speed vs direction)
+                    min_speed_confidence = 0.5  # Speed confidence threshold
+                    min_direction_confidence = 0.3  # Direction confidence threshold (lower - direction is more variable)
+                    if speed_confidence >= min_speed_confidence and direction_confidence >= min_direction_confidence:
                         # Gradually adjust calibration to avoid sudden jumps
                         adjustment_weight = 0.3  # Apply 30% of the calculated adjustment each time
                         

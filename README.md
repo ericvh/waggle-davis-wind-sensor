@@ -377,14 +377,21 @@ python3 main.py --continuous-calibration \
   --continuous-samples 25 \
   --continuous-adjustment-rate 0.1
 
-# Higher confidence threshold for more selective adjustments
+# Higher confidence thresholds for more selective adjustments
 python3 main.py --continuous-calibration \
-  --continuous-confidence-threshold 0.7
+  --continuous-confidence-threshold 0.7 \
+  --continuous-direction-confidence-threshold 0.5
 
 # Lower initial confidence for easier bootstrap
 python3 main.py --continuous-calibration \
   --initial-calibration-confidence 0.2 \
+  --initial-direction-confidence 0.1 \
   --continuous-confidence-threshold 0.8
+
+# Ignore direction confidence completely (only check speed)
+python3 main.py --continuous-calibration \
+  --continuous-direction-confidence-threshold 0.0 \
+  --initial-direction-confidence 0.0
 
 # Faster bootstrap retries for quicker initial calibration
 python3 main.py --continuous-calibration \
@@ -414,8 +421,10 @@ python3 main.py --continuous-calibration --web-server --web-port 8080
    Ongoing calibration interval: 900 seconds (15.0 minutes)
    Initial calibration retry interval: 180 seconds (3.0 minutes)
    Samples per calibration: 20
-   Confidence threshold: 0.5
-   Initial confidence threshold: 0.3
+   Speed confidence threshold: 0.5
+   Direction confidence threshold: 0.3
+   Initial speed confidence threshold: 0.3
+   Initial direction confidence threshold: 0.2
    Adjustment rate: 30% per cycle
 ✅ Tempest detected for continuous calibration: 8.2 knots, 145°
 
@@ -424,8 +433,8 @@ python3 main.py --continuous-calibration --web-server --web-port 8080
 🧮 Calculating continuous calibration from 20 samples...
 📈 Calculated continuous calibration:
    Speed factor: 1.0284 (confidence: 0.423)
-   Direction offset: -2.1° (confidence: 0.456)
-   Using initial calibration confidence threshold: 0.3
+   Direction offset: -2.1° (confidence: 0.256)
+   Using initial calibration confidence thresholds: speed≥0.30, direction≥0.20
    Using full adjustment rate for bootstrap: 100%
 ✅ Applied initial calibration (bootstrap):
    New speed factor: 1.0284
@@ -597,9 +606,11 @@ python3 main.py [options]
 - `--continuous-interval` : Time between calibration cycles in seconds (default: `900`)
 - `--continuous-samples` : Number of samples per calibration cycle (default: `20`)
 - `--continuous-sample-interval` : Seconds between samples during collection (default: `5`)
-- `--continuous-confidence-threshold` : Minimum confidence for applying adjustments (default: `0.5`)
+- `--continuous-confidence-threshold` : Minimum speed confidence for applying adjustments (default: `0.5`)
+- `--continuous-direction-confidence-threshold` : Minimum direction confidence for applying adjustments (default: `0.3`)
 - `--continuous-adjustment-rate` : Percentage of adjustment to apply per cycle (default: `0.3`)
-- `--initial-calibration-confidence` : Lower confidence threshold for initial calibration bootstrap (default: `0.3`)
+- `--initial-calibration-confidence` : Lower speed confidence threshold for initial calibration bootstrap (default: `0.3`)
+- `--initial-direction-confidence` : Lower direction confidence threshold for initial calibration bootstrap (default: `0.2`)
 - `--initial-calibration-retry-interval` : Retry interval in seconds for initial calibration when confidence is low (default: `180` = 3 minutes)
 
 ### Web Interface Arguments

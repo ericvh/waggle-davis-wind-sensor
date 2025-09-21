@@ -96,6 +96,13 @@
   - Added --initial-calibration-retry-interval argument for customization
   - Enhanced logging to distinguish initial vs ongoing calibration attempts
   - Prevents long delays in establishing good baseline calibration
+- [x] **Implement separate confidence thresholds for speed vs direction calibration**
+  - Added separate confidence thresholds for speed and direction (direction is more variable)
+  - New arguments: --continuous-direction-confidence-threshold (default: 0.3)
+  - New arguments: --initial-direction-confidence (default: 0.2)  
+  - Updated all confidence checking in main.py and tempest.py to use separate thresholds
+  - Enhanced logging to show separate threshold requirements and values
+  - Allows ignoring direction confidence completely by setting thresholds to 0.0
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware

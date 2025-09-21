@@ -583,7 +583,13 @@ def parse_args():
         "--continuous-confidence-threshold", 
         type=float, 
         default=0.5,
-        help="Minimum confidence required for continuous calibration adjustments (default: 0.5)"
+        help="Minimum speed confidence required for continuous calibration adjustments (default: 0.5)"
+    )
+    parser.add_argument(
+        "--continuous-direction-confidence-threshold", 
+        type=float, 
+        default=0.3,
+        help="Minimum direction confidence required for continuous calibration adjustments (default: 0.3)"
     )
     parser.add_argument(
         "--continuous-adjustment-rate", 
@@ -595,7 +601,13 @@ def parse_args():
         "--initial-calibration-confidence", 
         type=float, 
         default=0.3,
-        help="Lower confidence threshold for initial calibration bootstrap (default: 0.3)"
+        help="Lower speed confidence threshold for initial calibration bootstrap (default: 0.3)"
+    )
+    parser.add_argument(
+        "--initial-direction-confidence", 
+        type=float, 
+        default=0.2,
+        help="Lower direction confidence threshold for initial calibration bootstrap (default: 0.2)"
     )
     parser.add_argument(
         "--initial-calibration-retry-interval", 
@@ -1429,12 +1441,13 @@ def run_auto_calibration(args, logger):
         logger.info(f"🧭 Applied direction offset: {calibration_result['direction_offset']:.2f}°")
         return calibration_result['speed_calibration_factor'], calibration_result['direction_offset']
     else:
-        logger.warning(f"⚠️  Calibration confidence below threshold ({min_confidence:.2f})")
+        logger.warning(f"⚠️  Calibration confidence below threshold (speed≥{min_confidence:.2f}, direction≥{min_confidence:.2f})")
         
         # Try fallback with initial calibration confidence for bootstrap
-        initial_confidence = args.initial_calibration_confidence
-        if speed_confidence >= initial_confidence and direction_confidence >= initial_confidence:
-            logger.info(f"💡 Using initial calibration confidence fallback ({initial_confidence:.2f})")
+        initial_speed_confidence = args.initial_calibration_confidence
+        initial_direction_confidence = args.initial_direction_confidence
+        if speed_confidence >= initial_speed_confidence and direction_confidence >= initial_direction_confidence:
+            logger.info(f"💡 Using initial calibration confidence fallback (speed≥{initial_speed_confidence:.2f}, direction≥{initial_direction_confidence:.2f})")
             logger.info("🔄 Applying calibration as bootstrap values for continuous calibration")
             logger.info(f"📈 Applied speed factor: {calibration_result['speed_calibration_factor']:.4f}")
             logger.info(f"🧭 Applied direction offset: {calibration_result['direction_offset']:.2f}°")
@@ -1445,8 +1458,8 @@ def run_auto_calibration(args, logger):
                 logger.info(f"   - Speed confidence too low ({speed_confidence:.3f}): try with more steady wind conditions")
             if direction_confidence < min_confidence:
                 logger.info(f"   - Direction confidence too low ({direction_confidence:.3f}): check wind vane alignment")
-            logger.info("   - Use --min-calibration-confidence to adjust threshold")
-            logger.info(f"   - Use --initial-calibration-confidence to enable bootstrap mode")
+            logger.info("   - Use --min-calibration-confidence to adjust speed threshold")
+            logger.info(f"   - Use --initial-calibration-confidence and --initial-direction-confidence to enable bootstrap mode")
             logger.info("   - Manually specify calibration: --calibration-factor X.XXX --direction-offset Y.Y")
             
             return None, None
@@ -1489,8 +1502,10 @@ class ContinuousCalibrator:
         self.logger.info(f"   Initial calibration retry interval: {self.args.initial_calibration_retry_interval} seconds ({self.args.initial_calibration_retry_interval/60:.1f} minutes)")
         self.logger.info(f"   Samples per calibration: {self.args.continuous_samples}")
         self.logger.info(f"   Sample interval: {self.args.continuous_sample_interval} seconds")
-        self.logger.info(f"   Confidence threshold: {self.args.continuous_confidence_threshold}")
-        self.logger.info(f"   Initial confidence threshold: {self.args.initial_calibration_confidence}")
+        self.logger.info(f"   Speed confidence threshold: {self.args.continuous_confidence_threshold}")
+        self.logger.info(f"   Direction confidence threshold: {self.args.continuous_direction_confidence_threshold}")
+        self.logger.info(f"   Initial speed confidence threshold: {self.args.initial_calibration_confidence}")
+        self.logger.info(f"   Initial direction confidence threshold: {self.args.initial_direction_confidence}")
         self.logger.info(f"   Adjustment rate: {self.args.continuous_adjustment_rate * 100:.0f}% per cycle")
         
         self.running = True
@@ -1657,16 +1672,19 @@ class ContinuousCalibrator:
                         self.logger.info(f"   Speed factor: {new_speed_factor:.4f} (confidence: {speed_confidence:.3f})")
                         self.logger.info(f"   Direction offset: {new_direction_offset:.2f}° (confidence: {direction_confidence:.3f})")
                         
-                        # Determine confidence threshold (lower for initial calibration)
+                        # Determine confidence thresholds (lower for initial calibration)
                         if not self.has_initial_calibration:
-                            confidence_threshold = self.args.initial_calibration_confidence
-                            self.logger.info(f"   Using initial calibration confidence threshold: {confidence_threshold}")
+                            speed_threshold = self.args.initial_calibration_confidence
+                            direction_threshold = self.args.initial_direction_confidence
+                            self.logger.info(f"   Using initial calibration confidence thresholds: speed≥{speed_threshold:.2f}, direction≥{direction_threshold:.2f}")
                         else:
-                            confidence_threshold = self.args.continuous_confidence_threshold
+                            speed_threshold = self.args.continuous_confidence_threshold
+                            direction_threshold = self.args.continuous_direction_confidence_threshold
+                            self.logger.info(f"   Using ongoing calibration confidence thresholds: speed≥{speed_threshold:.2f}, direction≥{direction_threshold:.2f}")
                         
-                        # Apply calibration if confidence meets threshold
-                        if (speed_confidence >= confidence_threshold and 
-                            direction_confidence >= confidence_threshold):
+                        # Apply calibration if confidence meets thresholds
+                        if (speed_confidence >= speed_threshold and 
+                            direction_confidence >= direction_threshold):
                             
                             # Use different adjustment rates for initial vs ongoing calibration
                             if not self.has_initial_calibration:
@@ -1700,10 +1718,13 @@ class ContinuousCalibrator:
                         else:
                             if not self.has_initial_calibration:
                                 self.logger.info(f"⚠️  Low confidence for initial calibration - will retry in {calibration_interval/60:.1f} minutes")
-                                self.logger.info(f"   Need confidence ≥ {confidence_threshold:.2f}, got speed={speed_confidence:.3f}, direction={direction_confidence:.3f}")
+                                self.logger.info(f"   Need speed≥{speed_threshold:.2f}, direction≥{direction_threshold:.2f}")
+                                self.logger.info(f"   Got speed={speed_confidence:.3f}, direction={direction_confidence:.3f}")
                                 self.logger.info(f"   Retrying bootstrap calibration more frequently until confident baseline established")
                             else:
                                 self.logger.info(f"⚠️  Low confidence for ongoing calibration - keeping current calibration")
+                                self.logger.info(f"   Need speed≥{speed_threshold:.2f}, direction≥{direction_threshold:.2f}")
+                                self.logger.info(f"   Got speed={speed_confidence:.3f}, direction={direction_confidence:.3f}")
                             self.logger.info(f"   Current speed factor: {self.current_speed_factor:.4f}")
                             self.logger.info(f"   Current direction offset: {self.current_direction_offset:.2f}°")
                     else:
