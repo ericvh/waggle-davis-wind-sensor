@@ -591,6 +591,12 @@ def parse_args():
         default=0.3,
         help="Rate of calibration adjustment per cycle (0.1-1.0, default: 0.3 = 30%% per cycle)"
     )
+    parser.add_argument(
+        "--initial-calibration-confidence", 
+        type=float, 
+        default=0.3,
+        help="Lower confidence threshold for initial calibration bootstrap (default: 0.3)"
+    )
     return parser.parse_args()
 
 
@@ -1418,15 +1424,26 @@ def run_auto_calibration(args, logger):
         return calibration_result['speed_calibration_factor'], calibration_result['direction_offset']
     else:
         logger.warning(f"⚠️  Calibration confidence below threshold ({min_confidence:.2f})")
-        logger.info("💡 Recommendations:")
-        if speed_confidence < min_confidence:
-            logger.info(f"   - Speed confidence too low ({speed_confidence:.3f}): try with more steady wind conditions")
-        if direction_confidence < min_confidence:
-            logger.info(f"   - Direction confidence too low ({direction_confidence:.3f}): check wind vane alignment")
-        logger.info("   - Use --min-calibration-confidence to adjust threshold")
-        logger.info("   - Manually specify calibration: --calibration-factor X.XXX --direction-offset Y.Y")
         
-        return None, None
+        # Try fallback with initial calibration confidence for bootstrap
+        initial_confidence = args.initial_calibration_confidence
+        if speed_confidence >= initial_confidence and direction_confidence >= initial_confidence:
+            logger.info(f"💡 Using initial calibration confidence fallback ({initial_confidence:.2f})")
+            logger.info("🔄 Applying calibration as bootstrap values for continuous calibration")
+            logger.info(f"📈 Applied speed factor: {calibration_result['speed_calibration_factor']:.4f}")
+            logger.info(f"🧭 Applied direction offset: {calibration_result['direction_offset']:.2f}°")
+            return calibration_result['speed_calibration_factor'], calibration_result['direction_offset']
+        else:
+            logger.info("💡 Recommendations:")
+            if speed_confidence < min_confidence:
+                logger.info(f"   - Speed confidence too low ({speed_confidence:.3f}): try with more steady wind conditions")
+            if direction_confidence < min_confidence:
+                logger.info(f"   - Direction confidence too low ({direction_confidence:.3f}): check wind vane alignment")
+            logger.info("   - Use --min-calibration-confidence to adjust threshold")
+            logger.info(f"   - Use --initial-calibration-confidence to enable bootstrap mode")
+            logger.info("   - Manually specify calibration: --calibration-factor X.XXX --direction-offset Y.Y")
+            
+            return None, None
 
 
 # ---------------- Continuous Calibration for Main Plugin ----------------
@@ -1444,6 +1461,9 @@ class ContinuousCalibrator:
         self.current_speed_factor = wind_reader.calibration_factor
         self.current_direction_offset = wind_reader.direction_offset
         
+        # Track if we've had a successful calibration yet (for initial confidence threshold)
+        self.has_initial_calibration = False
+        
         # Thread synchronization
         self.calibration_lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -1458,6 +1478,7 @@ class ContinuousCalibrator:
         self.logger.info(f"   Samples per calibration: {self.args.continuous_samples}")
         self.logger.info(f"   Sample interval: {self.args.continuous_sample_interval} seconds")
         self.logger.info(f"   Confidence threshold: {self.args.continuous_confidence_threshold}")
+        self.logger.info(f"   Initial confidence threshold: {self.args.initial_calibration_confidence}")
         self.logger.info(f"   Adjustment rate: {self.args.continuous_adjustment_rate * 100:.0f}% per cycle")
         
         self.running = True
@@ -1614,9 +1635,16 @@ class ContinuousCalibrator:
                         self.logger.info(f"   Speed factor: {new_speed_factor:.4f} (confidence: {speed_confidence:.3f})")
                         self.logger.info(f"   Direction offset: {new_direction_offset:.2f}° (confidence: {direction_confidence:.3f})")
                         
+                        # Determine confidence threshold (lower for initial calibration)
+                        if not self.has_initial_calibration:
+                            confidence_threshold = self.args.initial_calibration_confidence
+                            self.logger.info(f"   Using initial calibration confidence threshold: {confidence_threshold}")
+                        else:
+                            confidence_threshold = self.args.continuous_confidence_threshold
+                        
                         # Apply calibration if confidence meets threshold
-                        if (speed_confidence >= self.args.continuous_confidence_threshold and 
-                            direction_confidence >= self.args.continuous_confidence_threshold):
+                        if (speed_confidence >= confidence_threshold and 
+                            direction_confidence >= confidence_threshold):
                             
                             # Gradually adjust calibration to avoid sudden jumps
                             adjustment_rate = self.args.continuous_adjustment_rate
@@ -1632,7 +1660,12 @@ class ContinuousCalibrator:
                             
                             self._update_calibration(adjusted_speed_factor, adjusted_direction_offset)
                             
-                            self.logger.info(f"✅ Applied continuous calibration adjustment:")
+                            # Mark that we've had successful initial calibration
+                            if not self.has_initial_calibration:
+                                self.has_initial_calibration = True
+                                self.logger.info(f"✅ Applied initial calibration (bootstrap):")
+                            else:
+                                self.logger.info(f"✅ Applied continuous calibration adjustment:")
                             self.logger.info(f"   New speed factor: {adjusted_speed_factor:.4f}")
                             self.logger.info(f"   New direction offset: {adjusted_direction_offset:.2f}°")
                         else:

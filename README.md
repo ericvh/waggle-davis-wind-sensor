@@ -355,9 +355,10 @@ The plugin supports **continuous automatic calibration** that runs in the backgr
 
 1. **Background Operation**: Runs in a separate thread alongside normal Davis sensor data collection
 2. **Periodic Comparison**: Every 15 minutes (configurable), collects comparison samples from both sensors
-3. **Gradual Adjustments**: Applies only 30% of calculated adjustments per cycle to prevent sudden jumps
-4. **Confidence-Based**: Only applies adjustments when confidence levels meet threshold (default: 50%)
-5. **Live Updates**: Calibration factors are updated in real-time without interrupting data collection
+3. **Initial Bootstrap**: Uses lower confidence threshold (30%) for first calibration to establish baseline
+4. **Gradual Adjustments**: Applies only 30% of calculated adjustments per cycle to prevent sudden jumps
+5. **Confidence-Based**: Only applies adjustments when confidence levels meet threshold (default: 50%)
+6. **Live Updates**: Calibration factors are updated in real-time without interrupting data collection
 
 #### Usage
 
@@ -378,6 +379,11 @@ python3 main.py --continuous-calibration \
 # Higher confidence threshold for more selective adjustments
 python3 main.py --continuous-calibration \
   --continuous-confidence-threshold 0.7
+
+# Lower initial confidence for easier bootstrap
+python3 main.py --continuous-calibration \
+  --initial-calibration-confidence 0.2 \
+  --continuous-confidence-threshold 0.8
 ```
 
 **With web monitoring:**
@@ -403,6 +409,7 @@ python3 main.py --continuous-calibration --web-server --web-port 8080
    Calibration interval: 900 seconds (15.0 minutes)
    Samples per calibration: 20
    Confidence threshold: 0.5
+   Initial confidence threshold: 0.3
    Adjustment rate: 30% per cycle
 ✅ Tempest detected for continuous calibration: 8.2 knots, 145°
 
@@ -410,9 +417,10 @@ python3 main.py --continuous-calibration --web-server --web-port 8080
 ⏰ Next calibration scheduled for 14:45:15
 🧮 Calculating continuous calibration from 20 samples...
 📈 Calculated continuous calibration:
-   Speed factor: 1.0284 (confidence: 0.823)
-   Direction offset: -2.1° (confidence: 0.901)
-✅ Applied continuous calibration adjustment:
+   Speed factor: 1.0284 (confidence: 0.423)
+   Direction offset: -2.1° (confidence: 0.456)
+   Using initial calibration confidence threshold: 0.3
+✅ Applied initial calibration (bootstrap):
    New speed factor: 1.0085
    New direction offset: -0.63°
 ```
@@ -584,6 +592,7 @@ python3 main.py [options]
 - `--continuous-sample-interval` : Seconds between samples during collection (default: `5`)
 - `--continuous-confidence-threshold` : Minimum confidence for applying adjustments (default: `0.5`)
 - `--continuous-adjustment-rate` : Percentage of adjustment to apply per cycle (default: `0.3`)
+- `--initial-calibration-confidence` : Lower confidence threshold for initial calibration bootstrap (default: `0.3`)
 
 ### Web Interface Arguments
 - `--web-server` : Enable mini web server for monitoring
