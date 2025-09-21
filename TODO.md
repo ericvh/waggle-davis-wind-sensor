@@ -84,6 +84,12 @@
   - Enhanced TODO Best Practices with commit workflow guidance
   - Updated File Update Checklist to include TODO.md in commits
   - Establishes clean git history with atomic commits for related changes
+- [x] **Fix bootstrap calibration to use full adjustment rate instead of gradual rate**
+  - Bootstrap calibration now applies 100% of calculated correction immediately
+  - Ongoing calibration continues to use gradual 30% adjustment rate to prevent jumps
+  - Added logging to show which adjustment rate is being used (full vs gradual)
+  - Ensures bootstrap calibration establishes good baseline quickly
+  - Maintains conservative gradual adjustments for long-term stability
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware

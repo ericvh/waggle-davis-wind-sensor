@@ -1651,8 +1651,15 @@ class ContinuousCalibrator:
                         if (speed_confidence >= confidence_threshold and 
                             direction_confidence >= confidence_threshold):
                             
-                            # Gradually adjust calibration to avoid sudden jumps
-                            adjustment_rate = self.args.continuous_adjustment_rate
+                            # Use different adjustment rates for initial vs ongoing calibration
+                            if not self.has_initial_calibration:
+                                # Bootstrap calibration: apply full correction immediately
+                                adjustment_rate = 1.0
+                                self.logger.info(f"   Using full adjustment rate for bootstrap: {adjustment_rate * 100:.0f}%")
+                            else:
+                                # Ongoing calibration: gradually adjust to avoid sudden jumps
+                                adjustment_rate = self.args.continuous_adjustment_rate
+                                self.logger.info(f"   Using gradual adjustment rate: {adjustment_rate * 100:.0f}%")
                             
                             adjusted_speed_factor = (
                                 self.current_speed_factor * (1 - adjustment_rate) + 
