@@ -65,6 +65,13 @@
   - Auto-calibration fallback: tries initial confidence if main confidence fails
   - Updated documentation with bootstrap examples and sample output
   - Enables easier system startup with imperfect initial conditions
+- [x] **Virtual environment setup in development guide**
+  - Added comprehensive 'Development Environment Setup' section to DEVELOPMENT.md
+  - Step-by-step venv creation, activation, and dependency installation instructions
+  - Virtual environment best practices and troubleshooting guidance
+  - Updated testing workflow and quick reference to always use venv
+  - Prevents externally-managed-environment errors on modern Python installations
+  - Establishes proper Python development environment practices
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
