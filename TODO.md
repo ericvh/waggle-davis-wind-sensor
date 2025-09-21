@@ -98,11 +98,18 @@
   - Prevents long delays in establishing good baseline calibration
 - [x] **Implement separate confidence thresholds for speed vs direction calibration**
   - Added separate confidence thresholds for speed and direction (direction is more variable)
-  - New arguments: --continuous-direction-confidence-threshold (default: 0.3)
-  - New arguments: --initial-direction-confidence (default: 0.2)  
+  - New arguments: --continuous-direction-confidence-threshold (default: 0.0 = disabled)
+  - New arguments: --initial-direction-confidence (default: 0.0 = disabled)  
   - Updated all confidence checking in main.py and tempest.py to use separate thresholds
   - Enhanced logging to show separate threshold requirements and values
-  - Allows ignoring direction confidence completely by setting thresholds to 0.0
+  - Direction confidence disabled by default since direction measurements are more variable
+- [x] **Implement direction history database for non-linear calibration**
+  - Added DirectionHistoryDB class to build historical mapping of Tempest direction vs Davis pot values
+  - New arguments: --enable-direction-history and --direction-history-file (default: direction_history.json)
+  - Automatically collects Tempest direction → Davis pot value pairs during operation
+  - Uses 10-degree direction bins with up to 100 samples per bin for statistical reliability
+  - Provides foundation for future non-linear direction calibration improvements
+  - Thread-safe data collection and persistent JSON storage
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware

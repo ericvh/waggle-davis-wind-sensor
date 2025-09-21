@@ -7,6 +7,7 @@ import time
 import serial
 import re
 import json
+import os
 import threading
 import requests
 import socket
@@ -588,8 +589,8 @@ def parse_args():
     parser.add_argument(
         "--continuous-direction-confidence-threshold", 
         type=float, 
-        default=0.3,
-        help="Minimum direction confidence required for continuous calibration adjustments (default: 0.3)"
+        default=0.0,
+        help="Minimum direction confidence required for continuous calibration adjustments (default: 0.0 = disabled)"
     )
     parser.add_argument(
         "--continuous-adjustment-rate", 
@@ -606,14 +607,25 @@ def parse_args():
     parser.add_argument(
         "--initial-direction-confidence", 
         type=float, 
-        default=0.2,
-        help="Lower direction confidence threshold for initial calibration bootstrap (default: 0.2)"
+        default=0.0,
+        help="Lower direction confidence threshold for initial calibration bootstrap (default: 0.0 = disabled)"
     )
     parser.add_argument(
         "--initial-calibration-retry-interval", 
         type=int, 
         default=180,
         help="Retry interval in seconds for initial calibration when confidence is low (default: 180 = 3 minutes)"
+    )
+    parser.add_argument(
+        "--enable-direction-history", 
+        action="store_true",
+        help="Enable building historical database of Tempest direction vs Davis pot values for non-linear calibration"
+    )
+    parser.add_argument(
+        "--direction-history-file", 
+        type=str, 
+        default="direction_history.json",
+        help="File to store direction history database (default: direction_history.json)"
     )
     return parser.parse_args()
 
@@ -1465,6 +1477,99 @@ def run_auto_calibration(args, logger):
             return None, None
 
 
+# ---------------- Direction History Database ----------------
+class DirectionHistoryDB:
+    """Manages historical database of Tempest direction vs Davis pot values for non-linear calibration"""
+    
+    def __init__(self, filename, enabled=False):
+        self.filename = filename
+        self.enabled = enabled
+        self.history = {}  # {tempest_direction_bucket: [davis_pot_values]}
+        self.direction_bins = 36  # 10-degree bins (360/10)
+        self.lock = threading.Lock()
+        
+        if self.enabled:
+            self._load_history()
+    
+    def _get_direction_bucket(self, direction):
+        """Convert direction to bucket (10-degree bins)"""
+        return int(direction // 10) * 10
+    
+    def _load_history(self):
+        """Load history from file"""
+        try:
+            if os.path.exists(self.filename):
+                with open(self.filename, 'r') as f:
+                    data = json.load(f)
+                    # Convert string keys back to integers
+                    self.history = {int(k): v for k, v in data.items()}
+                logging.getLogger(__name__).info(f"📚 Loaded direction history from {self.filename} ({len(self.history)} buckets)")
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"⚠️  Could not load direction history: {e}")
+            self.history = {}
+    
+    def _save_history(self):
+        """Save history to file"""
+        try:
+            with open(self.filename, 'w') as f:
+                json.dump(self.history, f, indent=2)
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"⚠️  Could not save direction history: {e}")
+    
+    def add_data_point(self, tempest_direction, davis_pot_value):
+        """Add a data point to the history"""
+        if not self.enabled:
+            return
+            
+        with self.lock:
+            bucket = self._get_direction_bucket(tempest_direction)
+            if bucket not in self.history:
+                self.history[bucket] = []
+            
+            self.history[bucket].append(davis_pot_value)
+            
+            # Keep only recent 100 samples per bucket to prevent unlimited growth
+            if len(self.history[bucket]) > 100:
+                self.history[bucket] = self.history[bucket][-100:]
+    
+    def get_expected_pot_value(self, tempest_direction):
+        """Get expected Davis pot value for given Tempest direction based on history"""
+        if not self.enabled:
+            return None
+            
+        with self.lock:
+            bucket = self._get_direction_bucket(tempest_direction)
+            
+            if bucket in self.history and len(self.history[bucket]) >= 5:
+                # Return median of historical values for this direction
+                values = sorted(self.history[bucket])
+                return values[len(values) // 2]
+            
+            return None
+    
+    def get_direction_mapping_stats(self):
+        """Get statistics about the direction mapping"""
+        if not self.enabled:
+            return {}
+            
+        with self.lock:
+            stats = {}
+            for bucket, values in self.history.items():
+                if len(values) >= 3:
+                    stats[bucket] = {
+                        'count': len(values),
+                        'median_pot': sorted(values)[len(values) // 2],
+                        'pot_range': max(values) - min(values)
+                    }
+            return stats
+    
+    def save_and_close(self):
+        """Save history and close"""
+        if self.enabled:
+            self._save_history()
+            logging.getLogger(__name__).info(f"📚 Saved direction history to {self.filename}")
+
+
 # ---------------- Continuous Calibration for Main Plugin ----------------
 class ContinuousCalibrator:
     """Manages continuous calibration in background while main plugin runs"""
@@ -1488,6 +1593,12 @@ class ContinuousCalibrator:
         self.collecting_samples = False
         self.samples_needed = 0
         
+        # Direction history database for non-linear calibration
+        self.direction_history = DirectionHistoryDB(
+            filename=args.direction_history_file,
+            enabled=args.enable_direction_history
+        )
+        
         # Thread synchronization
         self.calibration_lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -1507,6 +1618,16 @@ class ContinuousCalibrator:
         self.logger.info(f"   Initial speed confidence threshold: {self.args.initial_calibration_confidence}")
         self.logger.info(f"   Initial direction confidence threshold: {self.args.initial_direction_confidence}")
         self.logger.info(f"   Adjustment rate: {self.args.continuous_adjustment_rate * 100:.0f}% per cycle")
+        
+        if self.direction_history.enabled:
+            self.logger.info(f"   Direction history: Enabled (file: {self.args.direction_history_file})")
+            stats = self.direction_history.get_direction_mapping_stats()
+            if stats:
+                self.logger.info(f"   Direction history: {len(stats)} direction buckets with data")
+            else:
+                self.logger.info(f"   Direction history: Starting fresh database")
+        else:
+            self.logger.info(f"   Direction history: Disabled")
         
         self.running = True
         self.thread = threading.Thread(target=self._continuous_calibration_loop, daemon=True)
@@ -1528,6 +1649,15 @@ class ContinuousCalibrator:
         self.logger.info(f"   Speed factor: {self.current_speed_factor:.4f}")
         self.logger.info(f"   Direction offset: {self.current_direction_offset:.2f}°")
         
+        # Save direction history
+        if self.direction_history.enabled:
+            self.direction_history.save_and_close()
+            stats = self.direction_history.get_direction_mapping_stats()
+            if stats:
+                self.logger.info(f"📚 Direction history database: {len(stats)} direction buckets with sufficient data")
+                sample_bucket = next(iter(stats.values()))
+                self.logger.info(f"   Example: {sample_bucket['count']} samples, pot range: {sample_bucket['pot_range']:.0f}")
+        
     def get_current_calibration(self):
         """Get current calibration factors (thread-safe)"""
         with self.calibration_lock:
@@ -1536,10 +1666,15 @@ class ContinuousCalibrator:
     def add_data_sample(self, davis_data):
         """Add a data sample for continuous calibration (called by main loop)"""
         with self.calibration_lock:
+            # Always add to direction history if enabled (not just during calibration collection)
+            tempest_data = get_current_tempest_wind()
+            if tempest_data and davis_data and self.direction_history.enabled:
+                self.direction_history.add_data_point(
+                    tempest_data['wind_direction_deg'],
+                    davis_data['pot_value']
+                )
+            
             if self.collecting_samples and len(self.calibration_data_queue) < self.samples_needed:
-                # Get corresponding Tempest reading
-                tempest_data = get_current_tempest_wind()
-                
                 if tempest_data and davis_data:
                     # Convert Davis data back to raw readings for calibration calculation
                     raw_davis_data = {

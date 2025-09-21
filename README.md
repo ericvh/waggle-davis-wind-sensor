@@ -358,8 +358,9 @@ The plugin supports **continuous automatic calibration** that runs in the backgr
 3. **Periodic Comparison**: Every 15 minutes (configurable), collects comparison samples from both sensors
 4. **Initial Bootstrap**: Uses lower confidence threshold (30%) and full adjustment rate for first calibration
 5. **Gradual Adjustments**: Applies only 30% of calculated adjustments per cycle to prevent sudden jumps
-6. **Confidence-Based**: Only applies adjustments when confidence levels meet threshold (default: 50%)
-7. **Live Updates**: Calibration factors are updated in real-time without interrupting data collection
+6. **Speed-Only Confidence**: Direction confidence disabled by default (0.0) since direction is more variable
+7. **Direction History**: Optional database of Tempest direction vs Davis pot values for non-linear calibration
+8. **Live Updates**: Calibration factors are updated in real-time without interrupting data collection
 
 #### Usage
 
@@ -388,10 +389,15 @@ python3 main.py --continuous-calibration \
   --initial-direction-confidence 0.1 \
   --continuous-confidence-threshold 0.8
 
-# Ignore direction confidence completely (only check speed)
+# Enable direction confidence for strict calibration
 python3 main.py --continuous-calibration \
-  --continuous-direction-confidence-threshold 0.0 \
-  --initial-direction-confidence 0.0
+  --continuous-direction-confidence-threshold 0.4 \
+  --initial-direction-confidence 0.2
+
+# Enable direction history database for non-linear calibration
+python3 main.py --continuous-calibration \
+  --enable-direction-history \
+  --direction-history-file /data/wind_direction_history.json
 
 # Faster bootstrap retries for quicker initial calibration
 python3 main.py --continuous-calibration \
@@ -422,10 +428,12 @@ python3 main.py --continuous-calibration --web-server --web-port 8080
    Initial calibration retry interval: 180 seconds (3.0 minutes)
    Samples per calibration: 20
    Speed confidence threshold: 0.5
-   Direction confidence threshold: 0.3
+   Direction confidence threshold: 0.0
    Initial speed confidence threshold: 0.3
-   Initial direction confidence threshold: 0.2
+   Initial direction confidence threshold: 0.0
    Adjustment rate: 30% per cycle
+   Direction history: Enabled (file: direction_history.json)
+   Direction history: Starting fresh database
 ✅ Tempest detected for continuous calibration: 8.2 knots, 145°
 
 📊 Starting initial bootstrap calibration at 14:30:15
@@ -433,8 +441,8 @@ python3 main.py --continuous-calibration --web-server --web-port 8080
 🧮 Calculating continuous calibration from 20 samples...
 📈 Calculated continuous calibration:
    Speed factor: 1.0284 (confidence: 0.423)
-   Direction offset: -2.1° (confidence: 0.256)
-   Using initial calibration confidence thresholds: speed≥0.30, direction≥0.20
+   Direction offset: -2.1° (confidence: 0.156)
+   Using initial calibration confidence thresholds: speed≥0.30, direction≥0.00
    Using full adjustment rate for bootstrap: 100%
 ✅ Applied initial calibration (bootstrap):
    New speed factor: 1.0284
@@ -607,11 +615,13 @@ python3 main.py [options]
 - `--continuous-samples` : Number of samples per calibration cycle (default: `20`)
 - `--continuous-sample-interval` : Seconds between samples during collection (default: `5`)
 - `--continuous-confidence-threshold` : Minimum speed confidence for applying adjustments (default: `0.5`)
-- `--continuous-direction-confidence-threshold` : Minimum direction confidence for applying adjustments (default: `0.3`)
+- `--continuous-direction-confidence-threshold` : Minimum direction confidence for applying adjustments (default: `0.0` = disabled)
 - `--continuous-adjustment-rate` : Percentage of adjustment to apply per cycle (default: `0.3`)
 - `--initial-calibration-confidence` : Lower speed confidence threshold for initial calibration bootstrap (default: `0.3`)
-- `--initial-direction-confidence` : Lower direction confidence threshold for initial calibration bootstrap (default: `0.2`)
+- `--initial-direction-confidence` : Lower direction confidence threshold for initial calibration bootstrap (default: `0.0` = disabled)
 - `--initial-calibration-retry-interval` : Retry interval in seconds for initial calibration when confidence is low (default: `180` = 3 minutes)
+- `--enable-direction-history` : Enable building historical database of Tempest direction vs Davis pot values for non-linear calibration
+- `--direction-history-file` : File to store direction history database (default: `direction_history.json`)
 
 ### Web Interface Arguments
 - `--web-server` : Enable mini web server for monitoring

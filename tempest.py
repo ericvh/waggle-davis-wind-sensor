@@ -1202,7 +1202,7 @@ def continuous_calibration(args):
                     
                     # Apply calibration if confidence is reasonable (separate thresholds for speed vs direction)
                     min_speed_confidence = 0.5  # Speed confidence threshold
-                    min_direction_confidence = 0.3  # Direction confidence threshold (lower - direction is more variable)
+                    min_direction_confidence = 0.0  # Direction confidence threshold (disabled by default - direction is more variable)
                     if speed_confidence >= min_speed_confidence and direction_confidence >= min_direction_confidence:
                         # Gradually adjust calibration to avoid sudden jumps
                         adjustment_weight = 0.3  # Apply 30% of the calculated adjustment each time
