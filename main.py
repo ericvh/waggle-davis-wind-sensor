@@ -560,7 +560,7 @@ def parse_args():
         "--continuous-calibration", 
         action="store_true", 
         help="Enable continuous calibration mode - automatically adjusts calibration every 15 minutes"
-    )
+    ) 
     parser.add_argument(
         "--continuous-interval", 
         type=int, 
@@ -1535,8 +1535,8 @@ class ContinuousCalibrator:
                         break
                     
                     try:
-                                                       # Read from Davis sensor with timeout
-                               ser.timeout = 30.0  # Timeout for continuous mode
+                        # Read from Davis sensor with timeout
+                        ser.timeout = 30.0  # Timeout for continuous mode
                         line = ser.readline().decode('utf-8', errors='ignore').strip()
                         if not line:
                             continue
