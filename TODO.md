@@ -72,6 +72,12 @@
   - Updated testing workflow and quick reference to always use venv
   - Prevents externally-managed-environment errors on modern Python installations
   - Establishes proper Python development environment practices
+- [x] **Fix critical serial port conflict between main loop and continuous calibration**
+  - Removed separate serial connection attempt in continuous calibration
+  - Implemented shared data collection system using calibration_data_queue
+  - Added thread-safe data sharing methods (add_data_sample, is_collecting_samples)
+  - Modified main loop to feed data to continuous calibrator when collecting samples
+  - Ensures single serial connection eliminates port access conflicts
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
