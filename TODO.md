@@ -24,6 +24,7 @@
 - [x] Wind direction consistency metrics
 - [x] Wind speed min/max tracking (lull and gust measurements)
 - [x] Tempest weather station calibration integration (UDP-based standalone utility)
+- [x] Remove vestigial Tempest web interface code and fix AttributeError issues
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
