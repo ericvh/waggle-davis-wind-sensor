@@ -15,6 +15,11 @@ import json
 import threading
 import argparse
 import math
+import subprocess
+import sys
+import platform
+import signal
+import atexit
 from time import time
 from datetime import datetime
 from flask import Flask, jsonify, request
@@ -152,6 +157,153 @@ PARSERS = {
     "rapid_wind": parse_rapid_wind,
     "hub_status": parse_hub_status,
 }
+
+# ---------------- Firewall Management ----------------
+class FirewallManager:
+    """Manages iptables rules for UDP broadcast reception"""
+    
+    def __init__(self, port=UDP_PORT):
+        self.port = port
+        self.rule_added = False
+        self.is_linux = platform.system().lower() == 'linux'
+        self.rule_comment = f"tempest-calibration-{port}"
+        self.skip_setup = False
+        
+        # Register cleanup on exit
+        atexit.register(self.cleanup)
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+    
+    def _signal_handler(self, signum, frame):
+        """Handle interrupt signals to ensure cleanup"""
+        print(f"\nReceived signal {signum}, cleaning up firewall rules...")
+        self.cleanup()
+        sys.exit(0)
+    
+    def _run_command(self, cmd, check_output=False):
+        """Run a shell command with error handling"""
+        try:
+            if check_output:
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+                return result.returncode == 0, result.stdout.strip(), result.stderr.strip()
+            else:
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+                return result.returncode == 0, "", result.stderr.strip()
+        except subprocess.TimeoutExpired:
+            return False, "", "Command timed out"
+        except Exception as e:
+            return False, "", str(e)
+    
+    def _check_sudo(self):
+        """Check if we have sudo privileges"""
+        success, _, _ = self._run_command("sudo -n true")
+        return success
+    
+    def _rule_exists(self):
+        """Check if our iptables rule already exists"""
+        if not self.is_linux:
+            return False
+        
+        cmd = f"sudo iptables -C INPUT -p udp --dport {self.port} -j ACCEPT -m comment --comment {self.rule_comment} 2>/dev/null"
+        success, _, _ = self._run_command(cmd)
+        return success
+    
+    def add_rule(self):
+        """Add iptables rule to allow UDP broadcasts"""
+        if not self.is_linux:
+            print("Firewall management only supported on Linux systems")
+            return True
+        
+        if self._rule_exists():
+            print(f"Firewall rule for UDP port {self.port} already exists")
+            return True
+        
+        if not self._check_sudo():
+            print("Warning: No sudo privileges. You may need to manually allow UDP port 50222:")
+            print(f"sudo iptables -I INPUT -p udp --dport {self.port} -j ACCEPT")
+            return False
+        
+        print(f"Adding iptables rule to allow UDP broadcasts on port {self.port}...")
+        cmd = f"sudo iptables -I INPUT -p udp --dport {self.port} -j ACCEPT -m comment --comment {self.rule_comment}"
+        success, _, error = self._run_command(cmd)
+        
+        if success:
+            self.rule_added = True
+            print(f"✓ Firewall rule added successfully")
+            return True
+        else:
+            print(f"✗ Failed to add firewall rule: {error}")
+            print(f"Manual command: sudo iptables -I INPUT -p udp --dport {self.port} -j ACCEPT")
+            return False
+    
+    def remove_rule(self):
+        """Remove the iptables rule we added"""
+        if not self.is_linux or not self.rule_added:
+            return True
+        
+        if not self._rule_exists():
+            print(f"Firewall rule for UDP port {self.port} not found")
+            self.rule_added = False
+            return True
+        
+        print(f"Removing iptables rule for UDP port {self.port}...")
+        cmd = f"sudo iptables -D INPUT -p udp --dport {self.port} -j ACCEPT -m comment --comment {self.rule_comment}"
+        success, _, error = self._run_command(cmd)
+        
+        if success:
+            self.rule_added = False
+            print(f"✓ Firewall rule removed successfully")
+            return True
+        else:
+            print(f"✗ Failed to remove firewall rule: {error}")
+            print(f"Manual cleanup: sudo iptables -D INPUT -p udp --dport {self.port} -j ACCEPT")
+            return False
+    
+    def cleanup(self):
+        """Clean up firewall rules on exit"""
+        if self.rule_added:
+            self.remove_rule()
+    
+    def check_port_status(self):
+        """Check if the UDP port is accessible"""
+        print(f"Checking UDP port {self.port} accessibility...")
+        
+        # Try to bind to the port to see if it's available
+        try:
+            test_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            test_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            test_sock.bind(("0.0.0.0", self.port))
+            test_sock.close()
+            print(f"✓ UDP port {self.port} is accessible")
+            return True
+        except Exception as e:
+            print(f"✗ UDP port {self.port} binding failed: {e}")
+            return False
+    
+    def setup_firewall(self):
+        """Setup firewall rules and check port accessibility"""
+        print("Setting up firewall for Tempest UDP broadcasts...")
+        
+        # Check if we're on Linux
+        if not self.is_linux:
+            print(f"Running on {platform.system()}, skipping iptables configuration")
+            return self.check_port_status()
+        
+        # Check current firewall status
+        if self._rule_exists():
+            print(f"✓ Firewall rule for UDP port {self.port} already exists")
+        else:
+            # Try to add the rule
+            if not self.add_rule():
+                print("⚠️  Could not configure firewall automatically")
+                print("If you experience connectivity issues, manually run:")
+                print(f"sudo iptables -I INPUT -p udp --dport {self.port} -j ACCEPT")
+        
+        # Test port accessibility
+        return self.check_port_status()
+
+# Create global firewall manager instance
+firewall_manager = FirewallManager()
 
 # ---------------- Calibration Functions ----------------
 def get_current_tempest_wind():
@@ -430,6 +582,35 @@ def clear_calibration_readings():
         "message": "All calibration readings cleared"
     })
 
+@app.route("/calibration/firewall-status")
+def firewall_status():
+    """Get current firewall status"""
+    return jsonify({
+        "success": True,
+        "firewall": {
+            "platform": platform.system(),
+            "is_linux": firewall_manager.is_linux,
+            "rule_added": firewall_manager.rule_added,
+            "rule_exists": firewall_manager._rule_exists() if firewall_manager.is_linux else False,
+            "port": firewall_manager.port,
+            "sudo_available": firewall_manager._check_sudo() if firewall_manager.is_linux else False
+        }
+    })
+
+@app.route("/calibration/setup-firewall", methods=["POST"])  
+def setup_firewall_endpoint():
+    """Setup firewall rules via web interface"""
+    success = firewall_manager.setup_firewall()
+    
+    return jsonify({
+        "success": success,
+        "message": "Firewall setup completed" if success else "Firewall setup had issues",
+        "firewall": {
+            "rule_added": firewall_manager.rule_added,
+            "rule_exists": firewall_manager._rule_exists() if firewall_manager.is_linux else False
+        }
+    })
+
 @app.route("/calibration")
 def calibration_dashboard():
     """Simple HTML dashboard for calibration"""
@@ -465,6 +646,10 @@ def calibration_dashboard():
                 <h2>Current Tempest Data</h2>
                 <div id="tempest-data">Loading...</div>
                 <button onclick="refreshTempest()">Refresh</button>
+                
+                <h3>Network Status</h3>
+                <div id="firewall-status">Checking firewall...</div>
+                <button onclick="setupFirewall()">Setup Firewall</button>
             </div>
             
             <div class="section calibration-form">
@@ -615,13 +800,65 @@ def calibration_dashboard():
                     });
             }
             
+            function checkFirewallStatus() {
+                fetch('/calibration/firewall-status')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            const fw = data.firewall;
+                            let statusHtml = `Platform: ${fw.platform}<br>`;
+                            
+                            if (fw.is_linux) {
+                                statusHtml += `Firewall rule: ${fw.rule_exists ? '✓ Active' : '✗ Not found'}<br>`;
+                                statusHtml += `Auto-managed: ${fw.rule_added ? '✓ Yes' : '○ No'}<br>`;
+                                statusHtml += `Sudo access: ${fw.sudo_available ? '✓ Available' : '✗ Limited'}`;
+                            } else {
+                                statusHtml += `Firewall: Not managed on ${fw.platform}`;
+                            }
+                            
+                            document.getElementById('firewall-status').innerHTML = statusHtml;
+                        } else {
+                            document.getElementById('firewall-status').innerHTML = 
+                                '<span class="error">Error checking firewall status</span>';
+                        }
+                    })
+                    .catch(error => {
+                        document.getElementById('firewall-status').innerHTML = 
+                            `<span class="error">Error: ${error}</span>`;
+                    });
+            }
+            
+            function setupFirewall() {
+                document.getElementById('firewall-status').innerHTML = 'Setting up firewall...';
+                
+                fetch('/calibration/setup-firewall', {method: 'POST'})
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            document.getElementById('firewall-status').innerHTML = 
+                                `<span class="success">${data.message}</span>`;
+                            setTimeout(checkFirewallStatus, 1000); // Refresh status after setup
+                        } else {
+                            document.getElementById('firewall-status').innerHTML = 
+                                `<span class="error">Setup failed: ${data.message}</span>`;
+                        }
+                    })
+                    .catch(error => {
+                        document.getElementById('firewall-status').innerHTML = 
+                            `<span class="error">Error: ${error}</span>`;
+                    });
+            }
+            
             // Initial load
             refreshTempest();
             updateReadingsCount();
             loadReadingHistory();
+            checkFirewallStatus();
             
             // Auto-refresh Tempest data every 10 seconds
             setInterval(refreshTempest, 10000);
+            // Check firewall status every 30 seconds
+            setInterval(checkFirewallStatus, 30000);
         </script>
     </body>
     </html>
@@ -632,6 +869,19 @@ def interactive_calibration():
     """Interactive console-based calibration mode"""
     print("Davis Wind Sensor Calibration using Local Tempest Station")
     print("=" * 60)
+    print("Setting up network access for Tempest UDP broadcasts...")
+    print()
+    
+    # Setup firewall rules for UDP reception
+    if not firewall_manager.skip_setup:
+        if not firewall_manager.setup_firewall():
+            print("⚠️  Warning: Network setup may be incomplete")
+            print("If you don't receive Tempest data, check your firewall settings")
+            print()
+    else:
+        print("Firewall setup skipped")
+        print()
+    
     print("Make sure your Tempest station is broadcasting on UDP port 50222")
     print("Enter 'quit' to exit")
     print()
@@ -645,7 +895,7 @@ def interactive_calibration():
     
     # Wait a moment for initial data
     import time
-    time.sleep(2)
+    time.sleep(3)  # Give a bit more time for firewall setup and data reception
     
     while True:
         try:
@@ -736,12 +986,77 @@ def main():
         default=8080,
         help="HTTP server port (default: 8080)"
     )
+    parser.add_argument(
+        "--no-firewall", 
+        action="store_true",
+        help="Skip automatic firewall configuration"
+    )
+    parser.add_argument(
+        "--test-connection", 
+        action="store_true",
+        help="Test UDP connection and firewall setup, then exit"
+    )
     
     args = parser.parse_args()
     
+    if args.test_connection:
+        print("Testing Tempest UDP connection and firewall setup...")
+        print("=" * 50)
+        
+        if not args.no_firewall:
+            firewall_manager.setup_firewall()
+        else:
+            print("Skipping firewall setup (--no-firewall specified)")
+            firewall_manager.check_port_status()
+        
+        print("\nStarting UDP listener test (10 seconds)...")
+        udp_thread = threading.Thread(target=udp_listener, daemon=True)
+        udp_thread.start()
+        
+        import time
+        time.sleep(10)
+        
+        with lock:
+            if latest_raw_by_type:
+                print(f"✓ SUCCESS: Received {len(latest_raw_by_type)} message types from Tempest:")
+                for msg_type in latest_raw_by_type.keys():
+                    print(f"  - {msg_type}")
+                
+                if "rapid_wind" in latest_parsed_by_type or "obs_st" in latest_parsed_by_type:
+                    wind_data = get_current_tempest_wind()
+                    if wind_data:
+                        print(f"\nCurrent wind: {wind_data['wind_speed_knots']:.1f} knots, {wind_data['wind_direction_deg']:.0f}° ({wind_data['source']})")
+                    else:
+                        print("\n⚠️  Wind data received but could not parse current conditions")
+                else:
+                    print("\n⚠️  No wind data received yet")
+            else:
+                print("✗ FAILURE: No UDP data received from Tempest station")
+                print("\nTroubleshooting:")
+                print("1. Check that Tempest hub is on same network")
+                print("2. Verify Tempest station is broadcasting (usually enabled by default)")
+                print("3. Check firewall/router settings for UDP port 50222")
+                print("4. Try running with sudo if permission issues persist")
+        
+        return
+    
     if args.calibrate:
+        # Skip firewall setup if requested
+        if args.no_firewall:
+            print("Skipping automatic firewall configuration")
+            # Set a flag to skip firewall in interactive mode
+            firewall_manager.skip_setup = True
+        
         interactive_calibration()
     else:
+        # Setup firewall for web mode
+        if not args.no_firewall:
+            print("Setting up network access for Tempest UDP broadcasts...")
+            if not firewall_manager.setup_firewall():
+                print("⚠️  Warning: Network setup may be incomplete")
+                print("If you don't receive Tempest data, check your firewall settings")
+            print()
+        
         # Start UDP listener and web server
         udp_thread = threading.Thread(target=udp_listener, daemon=True)
         udp_thread.start()
@@ -750,8 +1065,13 @@ def main():
         print(f"UDP listener: port {UDP_PORT}")
         print(f"Web interface: http://localhost:{args.port}")
         print(f"Calibration dashboard: http://localhost:{args.port}/calibration")
+        print()
+        print("Note: Firewall rules will be automatically cleaned up on exit")
         
-        app.run(host="0.0.0.0", port=args.port)
+        try:
+            app.run(host="0.0.0.0", port=args.port)
+        except KeyboardInterrupt:
+            print("\nShutting down...")
 
 if __name__ == "__main__":
     main()

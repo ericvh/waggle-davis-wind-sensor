@@ -161,13 +161,20 @@ The plugin includes a specialized calibration utility (`tempest.py`) that uses l
 ```bash
 # Run interactive calibration in terminal
 python3 tempest.py --calibrate
+
+# Test connection and firewall setup
+python3 tempest.py --test-connection
+
+# Skip automatic firewall setup
+python3 tempest.py --calibrate --no-firewall
 ```
 
 This launches an interactive session where you:
-1. See current Tempest wind data
-2. Enter your Davis sensor readings
-3. Get real-time calibration updates as you add more samples
-4. Receive final calibration factors and command-line arguments
+1. **Automatic Firewall Setup**: Configures iptables rules for UDP reception
+2. See current Tempest wind data
+3. Enter your Davis sensor readings
+4. Get real-time calibration updates as you add more samples
+5. Receive final calibration factors and command-line arguments
 
 #### Web Dashboard Mode
 ```bash
@@ -180,6 +187,7 @@ python3 tempest.py
 
 The web dashboard provides:
 - **Live Tempest Data**: Auto-refreshing current wind conditions
+- **Network Status**: Real-time firewall and connection monitoring
 - **Easy Data Entry**: Simple form for Davis readings
 - **Visual History**: Table of all reading pairs
 - **Real-time Calculations**: Instant calibration updates
@@ -234,28 +242,84 @@ python3 main.py --calibration-factor 1.0847 --direction-offset -2.73
 - **Professional Reference**: Tempest stations are factory-calibrated
 - **Interactive Feedback**: See calibration improve with each sample
 - **Simultaneous Readings**: Perfect time synchronization between sensors
+- **Automatic Firewall Setup**: Manages iptables rules for UDP reception
+
+### Firewall Management
+
+The calibration utility automatically manages Linux firewall rules to ensure UDP broadcasts are received:
+
+#### Automatic Setup
+- **Rule Detection**: Checks if UDP port 50222 is already allowed
+- **Smart Addition**: Only adds rules if needed
+- **Commented Rules**: Uses identifiable comments for easy cleanup
+- **Auto Cleanup**: Removes rules automatically on exit
+
+#### Manual Control
+```bash
+# Skip firewall management entirely
+python3 tempest.py --calibrate --no-firewall
+
+# Test connection and firewall setup
+python3 tempest.py --test-connection
+
+# Check what iptables rules were added
+sudo iptables -L INPUT | grep tempest-calibration
+```
+
+#### Rule Details
+The utility adds this iptables rule when needed:
+```bash
+sudo iptables -I INPUT -p udp --dport 50222 -j ACCEPT -m comment --comment tempest-calibration-50222
+```
+
+#### Platform Support
+- **Linux**: Full automatic firewall management with iptables
+- **macOS/Windows**: Firewall management skipped (usually not needed)
+- **Docker/Container**: May require `--privileged` or `--cap-add=NET_ADMIN`
 
 ### API Endpoints (Web Mode)
 
+#### Weather Data
 - `GET /weather` - All Tempest data (raw and parsed)
+- `GET /weather/raw` - Raw UDP message data
+- `GET /weather/parsed` - Parsed and processed data
+
+#### Calibration
 - `GET /calibration/current-wind` - Current wind data for calibration
 - `POST /calibration/add-reading` - Add Davis reading pair
+- `GET /calibration/readings` - Get all calibration reading pairs
 - `GET /calibration/calculate` - Get calibration factors
 - `POST /calibration/clear` - Clear all readings
 - `GET /calibration` - Calibration dashboard (HTML)
 
+#### Network/Firewall
+- `GET /calibration/firewall-status` - Check firewall rule status
+- `POST /calibration/setup-firewall` - Setup firewall rules
+
 ### Troubleshooting
 
 **No Tempest data received:**
+- Run connection test: `python3 tempest.py --test-connection`
 - Check Tempest hub is on same network
-- Verify UDP port 50222 is not blocked by firewall
-- Ensure Tempest station is actively broadcasting
+- Verify Tempest station is actively broadcasting
+- Check firewall status in web dashboard
+- Try manual firewall rule: `sudo iptables -I INPUT -p udp --dport 50222 -j ACCEPT`
+
+**Permission errors:**
+- Run with sudo for firewall management: `sudo python3 tempest.py --calibrate`
+- Or skip firewall setup: `python3 tempest.py --calibrate --no-firewall`
+- Check sudo privileges: `sudo -v`
 
 **Poor calibration confidence:**
 - Take readings during steady wind conditions  
 - Collect more samples (8-15 recommended)
 - Ensure both sensors are measuring same air mass
 - Check for obstructions affecting either sensor
+
+**Firewall cleanup issues:**
+- Manual cleanup: `sudo iptables -D INPUT -p udp --dport 50222 -j ACCEPT`
+- List Tempest rules: `sudo iptables -L INPUT | grep tempest-calibration`
+- Force cleanup: `sudo iptables -D INPUT -m comment --comment tempest-calibration-50222`
 
 ## Web Monitoring Interface
 
