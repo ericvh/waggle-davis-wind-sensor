@@ -1842,10 +1842,23 @@ def main():
                                             latest_data["last_mqtt_report"] = datetime.now()
                                             latest_data["readings_since_report"] = 0
                                             
+                                            # Get current Tempest data for comparison logging
+                                            current_tempest = get_current_tempest_wind()
+                                            
                                             logger.info(f"Published averaged data: {averaged_data['avg_wind_speed_knots']:.2f} knots "
                                                        f"(min: {averaged_data['min_wind_speed_knots']:.2f}, max: {averaged_data['max_wind_speed_knots']:.2f}), "
                                                        f"{averaged_data['avg_wind_direction_deg']:.1f}° "
                                                        f"(samples: {averaged_data['sample_count']}, consistency: {averaged_data['wind_consistency']:.3f})")
+                                            
+                                            # Log Tempest comparison data if available
+                                            if current_tempest:
+                                                logger.info(f"Tempest comparison data: {current_tempest['wind_speed_knots']:.2f} knots, "
+                                                           f"{current_tempest['wind_direction_deg']:.1f}° "
+                                                           f"(source: {current_tempest['source']}, "
+                                                           f"diff: speed={current_tempest['wind_speed_knots'] - averaged_data['avg_wind_speed_knots']:+.2f}kt, "
+                                                           f"direction={((current_tempest['wind_direction_deg'] - averaged_data['avg_wind_direction_deg'] + 180) % 360) - 180:+.1f}°)")
+                                            else:
+                                                logger.info("Tempest comparison data: Not available")
                                             
                                             # Reset collector for next interval
                                             data_collector.reset_collection()
