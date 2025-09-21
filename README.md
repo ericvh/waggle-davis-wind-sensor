@@ -267,15 +267,23 @@ sudo iptables -L INPUT | grep tempest-calibration
 ```
 
 #### Rule Details
-The utility adds this iptables rule when needed:
+The utility automatically detects privileges and adds the appropriate iptables rule:
+
+**When running as root (common in containers):**
+```bash
+iptables -I INPUT -p udp --dport 50222 -j ACCEPT -m comment --comment tempest-calibration-50222
+```
+
+**When running as non-root user with sudo:**
 ```bash
 sudo iptables -I INPUT -p udp --dport 50222 -j ACCEPT -m comment --comment tempest-calibration-50222
 ```
 
 #### Platform Support
-- **Linux**: Full automatic firewall management with iptables
-- **macOS/Windows**: Firewall management skipped (usually not needed)
-- **Docker/Container**: May require `--privileged` or `--cap-add=NET_ADMIN`
+- **Linux (root)**: Direct iptables commands for optimal container compatibility
+- **Linux (non-root)**: sudo iptables commands with privilege detection
+- **macOS/Windows**: Firewall management gracefully skipped
+- **Docker/Container**: Optimized for root containers, supports `--privileged` mode
 
 ### API Endpoints (Web Mode)
 
@@ -336,9 +344,10 @@ Full automatic calibration will be implemented to:
 - Try manual firewall rule: `sudo iptables -I INPUT -p udp --dport 50222 -j ACCEPT`
 
 **Permission errors:**
-- Run with sudo for firewall management: `sudo python3 tempest.py --calibrate`
-- Or skip firewall setup: `python3 tempest.py --calibrate --no-firewall`
-- Check sudo privileges: `sudo -v`
+- **As root**: Direct iptables commands used automatically
+- **As non-root**: Run with sudo: `sudo python3 tempest.py --calibrate`
+- **Skip firewall**: Use `--no-firewall` flag
+- **Check privileges**: `sudo -v` or verify root with `id`
 
 **Poor calibration confidence:**
 - Take readings during steady wind conditions  
@@ -347,9 +356,9 @@ Full automatic calibration will be implemented to:
 - Check for obstructions affecting either sensor
 
 **Firewall cleanup issues:**
-- Manual cleanup: `sudo iptables -D INPUT -p udp --dport 50222 -j ACCEPT`
-- List Tempest rules: `sudo iptables -L INPUT | grep tempest-calibration`
-- Force cleanup: `sudo iptables -D INPUT -m comment --comment tempest-calibration-50222`
+- **Manual cleanup**: `iptables -D INPUT -p udp --dport 50222 -j ACCEPT` (add `sudo` if not root)
+- **List rules**: `iptables -L INPUT | grep tempest-calibration` (add `sudo` if not root)
+- **Force cleanup**: `iptables -D INPUT -m comment --comment tempest-calibration-50222` (add `sudo` if not root)
 
 ## Web Monitoring Interface
 
@@ -603,6 +612,8 @@ docker run -e DAVIS_MODE=test --network host --privileged \
 **For Tempest calibration modes:**
 - Use `--network host` to receive UDP broadcasts from Tempest station
 - Use `--privileged` for automatic firewall management
+- **Root containers**: Firewall rules applied directly (optimal)
+- **Non-root containers**: May need sudo setup or `--privileged` mode
 - Alternative: Use `-e NO_FIREWALL=true` and manage firewall manually
 
 ### Docker Compose (Recommended)
