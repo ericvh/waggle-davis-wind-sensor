@@ -46,6 +46,12 @@
   - Calculates and displays speed and direction differences between sensors
   - Proper angular distance calculation for wind direction differences
   - Graceful handling when Tempest data is unavailable
+- [x] **Comprehensive continuous calibration documentation in README.md**
+  - Added detailed continuous calibration mode section with usage examples
+  - Documented all configuration options and command line arguments
+  - Added Docker deployment examples for continuous mode
+  - Included comparison table between auto-calibration and continuous calibration
+  - Complete user-facing documentation for the continuous calibration feature
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
