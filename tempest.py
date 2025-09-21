@@ -1115,7 +1115,7 @@ def continuous_calibration(args):
                 ser = serial.Serial(
                     port=args.davis_port,
                     baudrate=115200,
-                    timeout=5.0,
+                    timeout=30.0,
                     bytesize=serial.EIGHTBITS,
                     parity=serial.PARITY_NONE,
                     stopbits=serial.STOPBITS_ONE

@@ -476,8 +476,8 @@ def parse_args():
     parser.add_argument(
         "--timeout", 
         type=float, 
-        default=5.0, 
-        help="Serial port timeout in seconds (default: 5.0)"
+        default=30.0, 
+        help="Serial port timeout in seconds (default: 30.0)"
     )
 
     parser.add_argument(
@@ -1169,7 +1169,7 @@ def start_web_server(port, logger):
 class WindSensorReader:
     """Wind sensor data reader for USB serial devices"""
     
-    def __init__(self, port, baudrate=115200, timeout=5.0, calibration_factor=1.0, 
+    def __init__(self, port, baudrate=115200, timeout=30.0, calibration_factor=1.0, 
                  direction_offset=0.0, direction_scale=1.0):
         self.port = port
         self.baudrate = baudrate
@@ -1514,8 +1514,8 @@ class ContinuousCalibrator:
                         break
                     
                     try:
-                        # Read from Davis sensor with short timeout
-                        ser.timeout = 2.0  # Short timeout for continuous mode
+                                                       # Read from Davis sensor with timeout
+                               ser.timeout = 30.0  # Timeout for continuous mode
                         line = ser.readline().decode('utf-8', errors='ignore').strip()
                         if not line:
                             continue

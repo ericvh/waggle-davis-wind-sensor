@@ -563,7 +563,7 @@ python3 main.py [options]
 **Options:**
 - `--port` : Serial port device (default: `/dev/ttyACM2`)
 - `--baudrate` : Serial port baud rate (default: `115200`)
-- `--timeout` : Serial port read timeout in seconds (default: `5.0`)
+- `--timeout` : Serial port read timeout in seconds (default: `30.0`)
 - `--calibration-factor` : Wind speed calibration factor (default: `1.0`)
 - `--direction-offset` : Wind direction offset in degrees (default: `0.0`)
 - `--direction-scale` : Wind direction scaling factor (default: `1.0`)
