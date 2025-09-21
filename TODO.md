@@ -40,6 +40,12 @@
   - Confidence-based calibration application with configurable thresholds
   - Thread-safe operation without disrupting normal sensor data collection
   - Robust error handling with automatic retry logic for long-term deployments
+- [x] **Tempest comparison data logging for calibration monitoring**
+  - Added side-by-side Davis vs Tempest data logging when averaged data is published
+  - Shows current Tempest reading alongside Davis averaged measurements
+  - Calculates and displays speed and direction differences between sensors
+  - Proper angular distance calculation for wind direction differences
+  - Graceful handling when Tempest data is unavailable
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
@@ -58,6 +64,11 @@
   - [ ] Validate thread-safe calibration factor updates
   - [ ] Test confidence-based calibration application
   - [ ] Verify graceful handling of Tempest data unavailability
+- [ ] Test Tempest comparison data logging functionality
+  - [ ] Verify Tempest data is logged alongside Davis averaged data
+  - [ ] Validate speed and direction difference calculations
+  - [ ] Test behavior when Tempest data is unavailable
+  - [ ] Confirm log output format and readability
 
 ## Enhancements 🚀
 
