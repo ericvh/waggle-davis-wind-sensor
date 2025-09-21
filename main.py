@@ -1464,6 +1464,11 @@ class ContinuousCalibrator:
         # Track if we've had a successful calibration yet (for initial confidence threshold)
         self.has_initial_calibration = False
         
+        # Data collection for calibration (shared with main loop)
+        self.calibration_data_queue = []
+        self.collecting_samples = False
+        self.samples_needed = 0
+        
         # Thread synchronization
         self.calibration_lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -1506,6 +1511,34 @@ class ContinuousCalibrator:
         with self.calibration_lock:
             return self.current_speed_factor, self.current_direction_offset
             
+    def add_data_sample(self, davis_data):
+        """Add a data sample for continuous calibration (called by main loop)"""
+        with self.calibration_lock:
+            if self.collecting_samples and len(self.calibration_data_queue) < self.samples_needed:
+                # Get corresponding Tempest reading
+                tempest_data = get_current_tempest_wind()
+                
+                if tempest_data and davis_data:
+                    # Convert Davis data back to raw readings for calibration calculation
+                    raw_davis_data = {
+                        'wind_speed_knots': davis_data['wind_speed_knots'] / self.current_speed_factor,
+                        'wind_direction_deg': (davis_data['wind_direction_deg'] - self.current_direction_offset) % 360.0
+                    }
+                    
+                    self.calibration_data_queue.append({
+                        'davis': raw_davis_data,
+                        'tempest': tempest_data
+                    })
+                    
+                    self.logger.debug(f"   Sample {len(self.calibration_data_queue)}/{self.samples_needed}: "
+                                    f"Davis: {raw_davis_data['wind_speed_knots']:.1f} knots, {raw_davis_data['wind_direction_deg']:.0f}° | "
+                                    f"Tempest: {tempest_data['wind_speed_knots']:.1f} knots, {tempest_data['wind_direction_deg']:.0f}°")
+                    
+    def is_collecting_samples(self):
+        """Check if currently collecting calibration samples"""
+        with self.calibration_lock:
+            return self.collecting_samples
+            
     def _update_calibration(self, new_speed_factor, new_direction_offset):
         """Update calibration factors in wind reader (thread-safe)"""
         with self.calibration_lock:
@@ -1517,75 +1550,47 @@ class ContinuousCalibrator:
             self.wind_reader.direction_offset = new_direction_offset
             
     def _collect_calibration_samples(self):
-        """Collect calibration samples by reading from both sensors"""
-        davis_readings = []
-        tempest_readings = []
-        samples_collected = 0
-        
+        """Collect calibration samples using shared data from main loop (no separate serial connection)"""
         self.logger.debug(f"📊 Collecting {self.args.continuous_samples} calibration samples...")
         
-        start_time = time.time()
-        timeout = self.args.continuous_samples * self.args.continuous_sample_interval * 3  # Generous timeout
+        # Start collecting samples (main loop will provide data)
+        with self.calibration_lock:
+            self.calibration_data_queue = []
+            self.collecting_samples = True
+            self.samples_needed = self.args.continuous_samples
         
-        try:
-            with self.wind_reader.serial_connection() as ser:
-                while samples_collected < self.args.continuous_samples and not self.stop_event.is_set():
-                    if time.time() - start_time > timeout:
-                        self.logger.warning(f"⚠️  Continuous calibration sample collection timeout after {timeout} seconds")
-                        break
-                    
-                    try:
-                        # Read from Davis sensor with timeout
-                        ser.timeout = 30.0  # Timeout for continuous mode
-                        line = ser.readline().decode('utf-8', errors='ignore').strip()
-                        if not line:
-                            continue
-                            
-                        # Parse with current calibration factors to get raw readings
-                        davis_data = self.wind_reader.parse_wind_data(line)
-                        
-                        if davis_data:
-                            # Get corresponding Tempest reading
-                            tempest_data = get_current_tempest_wind()
-                            
-                            if tempest_data:
-                                # Convert Davis data back to raw readings for calibration calculation
-                                raw_davis_data = {
-                                    'wind_speed_knots': davis_data['wind_speed_knots'] / self.current_speed_factor,
-                                    'wind_direction_deg': (davis_data['wind_direction_deg'] - self.current_direction_offset) % 360.0
-                                }
-                                
-                                davis_readings.append(raw_davis_data)
-                                tempest_readings.append(tempest_data)
-                                samples_collected += 1
-                                
-                                self.logger.debug(f"   Sample {samples_collected}/{self.args.continuous_samples}: "
-                                                f"Davis: {raw_davis_data['wind_speed_knots']:.1f} knots, {raw_davis_data['wind_direction_deg']:.0f}° | "
-                                                f"Tempest: {tempest_data['wind_speed_knots']:.1f} knots, {tempest_data['wind_direction_deg']:.0f}°")
-                                
-                                # Wait before next sample (if not the last one)
-                                if samples_collected < self.args.continuous_samples:
-                                    if self.stop_event.wait(self.args.continuous_sample_interval):
-                                        break  # Stop event was set
-                            else:
-                                if self.stop_event.wait(1):  # Short wait if no Tempest data
-                                    break
-                        else:
-                            if self.stop_event.wait(0.5):  # Short wait if no valid Davis data
-                                break
-                                
-                    except serial.SerialTimeoutException:
-                        continue
-                    except Exception as e:
-                        self.logger.debug(f"⚠️  Error reading Davis sensor during continuous calibration: {e}")
-                        if self.stop_event.wait(1):
-                            break
-                        continue
-                        
-        except Exception as e:
-            self.logger.warning(f"⚠️  Error during continuous calibration sample collection: {e}")
-            return [], []
-            
+        self.logger.debug("⏳ Waiting for main loop to provide calibration data...")
+        
+        start_time = time.time()
+        timeout = self.args.continuous_samples * self.args.continuous_sample_interval * 5  # More generous timeout
+        
+        # Wait for samples to be collected by main loop
+        while not self.stop_event.is_set():
+            if time.time() - start_time > timeout:
+                self.logger.warning(f"⚠️  Continuous calibration sample collection timeout after {timeout} seconds")
+                break
+                
+            with self.calibration_lock:
+                collected_count = len(self.calibration_data_queue)
+                
+            if collected_count >= self.args.continuous_samples:
+                self.logger.debug(f"✅ Collected {collected_count} calibration samples")
+                break
+                
+            # Brief wait before checking again
+            if self.stop_event.wait(0.5):
+                break
+        
+        # Stop collecting and get results
+        with self.calibration_lock:
+            self.collecting_samples = False
+            collected_data = self.calibration_data_queue[:]
+            self.calibration_data_queue = []
+        
+        # Convert to old format for compatibility with calculate_calibration_factors
+        davis_readings = [sample['davis'] for sample in collected_data]
+        tempest_readings = [sample['tempest'] for sample in collected_data]
+        
         return davis_readings, tempest_readings
         
     def _continuous_calibration_loop(self):
@@ -1827,6 +1832,10 @@ def main():
                                     
                                     # Add reading to data collector for averaging
                                     data_collector.add_reading(wind_data)
+                                    
+                                    # Provide data to continuous calibrator if it's collecting samples
+                                    if continuous_calibrator and continuous_calibrator.is_collecting_samples():
+                                        continuous_calibrator.add_data_sample(wind_data)
                                     
 
                                     
