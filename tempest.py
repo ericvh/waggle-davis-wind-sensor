@@ -194,17 +194,30 @@ class FirewallManager:
         except Exception as e:
             return False, "", str(e)
     
-    def _check_sudo(self):
-        """Check if we have sudo privileges"""
+    def _check_root_or_sudo(self):
+        """Check if we're running as root or have sudo privileges"""
+        import os
+        
+        # Check if running as root
+        if os.geteuid() == 0:
+            return True, True  # (has_privileges, is_root)
+        
+        # Not root, check sudo
         success, _, _ = self._run_command("sudo -n true")
-        return success
+        return success, False  # (has_privileges, is_root)
     
     def _rule_exists(self):
         """Check if our iptables rule already exists"""
         if not self.is_linux:
             return False
         
-        cmd = f"sudo iptables -C INPUT -p udp --dport {self.port} -j ACCEPT -m comment --comment {self.rule_comment} 2>/dev/null"
+        # Check if we're root or need sudo
+        has_privileges, is_root = self._check_root_or_sudo()
+        if not has_privileges:
+            return False
+        
+        sudo_prefix = "" if is_root else "sudo "
+        cmd = f"{sudo_prefix}iptables -C INPUT -p udp --dport {self.port} -j ACCEPT -m comment --comment {self.rule_comment} 2>/dev/null"
         success, _, _ = self._run_command(cmd)
         return success
     
@@ -218,13 +231,18 @@ class FirewallManager:
             print(f"Firewall rule for UDP port {self.port} already exists")
             return True
         
-        if not self._check_sudo():
-            print("Warning: No sudo privileges. You may need to manually allow UDP port 50222:")
-            print(f"sudo iptables -I INPUT -p udp --dport {self.port} -j ACCEPT")
+        # Check privileges and determine command prefix
+        has_privileges, is_root = self._check_root_or_sudo()
+        if not has_privileges:
+            print("Warning: No root/sudo privileges. You may need to manually allow UDP port 50222:")
+            print(f"iptables -I INPUT -p udp --dport {self.port} -j ACCEPT")
             return False
         
-        print(f"Adding iptables rule to allow UDP broadcasts on port {self.port}...")
-        cmd = f"sudo iptables -I INPUT -p udp --dport {self.port} -j ACCEPT -m comment --comment {self.rule_comment}"
+        sudo_prefix = "" if is_root else "sudo "
+        privilege_type = "root" if is_root else "sudo"
+        
+        print(f"Adding iptables rule to allow UDP broadcasts on port {self.port} (using {privilege_type})...")
+        cmd = f"{sudo_prefix}iptables -I INPUT -p udp --dport {self.port} -j ACCEPT -m comment --comment {self.rule_comment}"
         success, _, error = self._run_command(cmd)
         
         if success:
@@ -246,8 +264,17 @@ class FirewallManager:
             self.rule_added = False
             return True
         
-        print(f"Removing iptables rule for UDP port {self.port}...")
-        cmd = f"sudo iptables -D INPUT -p udp --dport {self.port} -j ACCEPT -m comment --comment {self.rule_comment}"
+        # Check privileges and determine command prefix
+        has_privileges, is_root = self._check_root_or_sudo()
+        if not has_privileges:
+            print(f"Warning: No root/sudo privileges to remove firewall rule")
+            return False
+        
+        sudo_prefix = "" if is_root else "sudo "
+        privilege_type = "root" if is_root else "sudo"
+        
+        print(f"Removing iptables rule for UDP port {self.port} (using {privilege_type})...")
+        cmd = f"{sudo_prefix}iptables -D INPUT -p udp --dport {self.port} -j ACCEPT -m comment --comment {self.rule_comment}"
         success, _, error = self._run_command(cmd)
         
         if success:
@@ -256,7 +283,8 @@ class FirewallManager:
             return True
         else:
             print(f"✗ Failed to remove firewall rule: {error}")
-            print(f"Manual cleanup: sudo iptables -D INPUT -p udp --dport {self.port} -j ACCEPT")
+            manual_cmd = f"iptables -D INPUT -p udp --dport {self.port} -j ACCEPT"
+            print(f"Manual cleanup: {manual_cmd}")
             return False
     
     def cleanup(self):
@@ -297,7 +325,7 @@ class FirewallManager:
             if not self.add_rule():
                 print("⚠️  Could not configure firewall automatically")
                 print("If you experience connectivity issues, manually run:")
-                print(f"sudo iptables -I INPUT -p udp --dport {self.port} -j ACCEPT")
+                print(f"iptables -I INPUT -p udp --dport {self.port} -j ACCEPT")
         
         # Test port accessibility
         return self.check_port_status()
