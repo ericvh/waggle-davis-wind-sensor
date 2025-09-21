@@ -18,6 +18,7 @@ A Waggle plugin that reads Davis wind sensor data from Arduino via USB serial po
   - Arduino iteration counter
 - **Data Averaging**: Configurable interval averaging with proper circular statistics for wind direction
 - **Min/Max Tracking**: Wind speed lull and gust measurements during each averaging interval
+- **Tempest Calibration**: UDP-based calibration using local Tempest weather station broadcasts
 - **Dual-Mode Reporting**: Real-time debug data + averaged environmental measurements
 - **Continuous Data Processing**: Blocks waiting for new data instead of polling on intervals for maximum responsiveness
 - **Web Monitoring Interface**: Optional built-in web server with real-time dashboard and JSON API
@@ -49,6 +50,7 @@ The plugin publishes the following measurements:
 | `davis.wind.pot.value` | counts | Raw potentiometer value (0-1024) |
 | `davis.wind.iteration` | count | Arduino iteration counter |
 | `davis.wind.sensor_status` | status | Sensor status (0=error, 1=ok) |
+
 
 ## Expected Serial Data Format
 
@@ -135,6 +137,125 @@ python3 main.py --reporting-interval 300
 ```bash
 python3 main.py --reporting-interval 10
 ```
+
+## Tempest Weather Station Calibration
+
+The plugin includes a specialized calibration utility (`tempest.py`) that uses local Tempest weather station UDP broadcasts to calibrate your Davis wind sensor. This provides highly accurate calibration using professional-grade meteorological instruments with sub-second latency.
+
+### How It Works
+
+1. **Local UDP Reception**: Receives real-time broadcasts from your local Tempest weather station
+2. **Interactive Comparison**: Enter your Davis readings and compare with simultaneous Tempest data  
+3. **Statistical Analysis**: Calculates optimal calibration factors with confidence metrics
+4. **Web Dashboard**: Optional browser-based interface for easier calibration sessions
+
+### Prerequisites
+
+- **Local Tempest Station**: You need a Tempest weather station on your local network
+- **UDP Broadcasts**: Tempest must be configured to broadcast on UDP port 50222
+- **Network Access**: Calibration utility must be on same network as Tempest hub
+
+### Usage Methods
+
+#### Interactive Console Mode
+```bash
+# Run interactive calibration in terminal
+python3 tempest.py --calibrate
+```
+
+This launches an interactive session where you:
+1. See current Tempest wind data
+2. Enter your Davis sensor readings
+3. Get real-time calibration updates as you add more samples
+4. Receive final calibration factors and command-line arguments
+
+#### Web Dashboard Mode
+```bash
+# Start web server with calibration dashboard
+python3 tempest.py
+
+# Then open browser to:
+# http://localhost:8080/calibration
+```
+
+The web dashboard provides:
+- **Live Tempest Data**: Auto-refreshing current wind conditions
+- **Easy Data Entry**: Simple form for Davis readings
+- **Visual History**: Table of all reading pairs
+- **Real-time Calculations**: Instant calibration updates
+- **Export Results**: Copy-paste command-line arguments
+
+### Sample Interactive Session
+
+```
+Davis Wind Sensor Calibration using Local Tempest Station
+============================================================
+Make sure your Tempest station is broadcasting on UDP port 50222
+Enter 'quit' to exit
+
+Current Tempest: 8.3 knots, 142° (rapid_wind)
+Enter Davis reading (speed,direction) or 'quit': 7.5,145
+Davis:   7.5 knots, 145°
+Stored reading pair #1
+
+Current Tempest: 8.1 knots, 140° (rapid_wind)  
+Enter Davis reading (speed,direction) or 'quit': 7.3,143
+Davis:   7.3 knots, 143°
+Stored reading pair #2
+
+Current calibration (based on 2 samples):
+  Speed factor: 1.103
+  Direction offset: -2.5°
+  Confidence: Speed=0.95, Direction=0.88
+```
+
+### Calibration Output
+
+```
+============================================================
+FINAL CALIBRATION RESULTS  
+============================================================
+Samples: 8
+Speed calibration factor: 1.0847
+Direction offset: -2.73°
+Speed confidence: 0.921
+Direction confidence: 0.856
+============================================================
+Command line for Davis plugin:
+python3 main.py --calibration-factor 1.0847 --direction-offset -2.73
+============================================================
+```
+
+### Advantages of UDP Method
+
+- **Real-Time Data**: Sub-second latency from local Tempest station
+- **No Internet Required**: Works entirely on local network
+- **High Precision**: Uses rapid_wind updates (3-second intervals) 
+- **Professional Reference**: Tempest stations are factory-calibrated
+- **Interactive Feedback**: See calibration improve with each sample
+- **Simultaneous Readings**: Perfect time synchronization between sensors
+
+### API Endpoints (Web Mode)
+
+- `GET /weather` - All Tempest data (raw and parsed)
+- `GET /calibration/current-wind` - Current wind data for calibration
+- `POST /calibration/add-reading` - Add Davis reading pair
+- `GET /calibration/calculate` - Get calibration factors
+- `POST /calibration/clear` - Clear all readings
+- `GET /calibration` - Calibration dashboard (HTML)
+
+### Troubleshooting
+
+**No Tempest data received:**
+- Check Tempest hub is on same network
+- Verify UDP port 50222 is not blocked by firewall
+- Ensure Tempest station is actively broadcasting
+
+**Poor calibration confidence:**
+- Take readings during steady wind conditions  
+- Collect more samples (8-15 recommended)
+- Ensure both sensors are measuring same air mass
+- Check for obstructions affecting either sensor
 
 ## Web Monitoring Interface
 
@@ -242,6 +363,7 @@ python3 main.py [options]
 - `--direction-offset` : Wind direction offset in degrees (default: `0.0`)
 - `--direction-scale` : Wind direction scaling factor (default: `1.0`)
 - `--reporting-interval` : MQTT reporting interval in seconds for averaged data (default: `60`)
+
 - `--web-server` : Enable mini web server for monitoring
 - `--web-port` : Web server port (default: `8080`)
 - `--debug` : Enable debug output

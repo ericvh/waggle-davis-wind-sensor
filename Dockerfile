@@ -2,6 +2,7 @@ FROM waggle/plugin-base:1.1.1-base
 
 # Install system dependencies for serial communication
 RUN apt-get update && apt-get install -y \
+    iptables \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
@@ -10,6 +11,7 @@ RUN pip3 install --no-cache-dir -r /app/requirements.txt
 
 # Copy plugin source code
 COPY main.py /app/
+COPY tempest.py /app/
 
 # Set the working directory
 WORKDIR /app
