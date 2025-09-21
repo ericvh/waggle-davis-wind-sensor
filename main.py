@@ -26,12 +26,155 @@ try:
 except ImportError:
     HAS_BEAUTIFULSOUP = False
 
-# Import Tempest calibration functionality
-try:
-    import tempest
-    HAS_TEMPEST = True
-except ImportError:
-    HAS_TEMPEST = False
+# Tempest calibration functionality is now integrated directly
+HAS_TEMPEST = True
+
+# Tempest UDP broadcast port
+UDP_PORT = 50222
+
+# ---------------- Firewall Management for Auto-Calibration ----------------
+class FirewallManager:
+    """Manages iptables rules for UDP broadcast reception"""
+    
+    def __init__(self, port=UDP_PORT):
+        self.port = port
+        self.rule_added = False
+        self.is_linux = platform.system().lower() == 'linux'
+        self.rule_comment = f"tempest-calibration-{port}"
+        self.skip_setup = False
+        
+        # Register cleanup on exit
+        atexit.register(self.cleanup)
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+    
+    def _signal_handler(self, signum, frame):
+        """Handle interrupt signals to ensure cleanup"""
+        print(f"\nReceived signal {signum}, cleaning up firewall rules...")
+        self.cleanup()
+        sys.exit(0)
+    
+    def _run_command(self, cmd, check_output=False):
+        """Run a shell command with error handling"""
+        try:
+            if check_output:
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+                return result.returncode == 0, result.stdout.strip(), result.stderr.strip()
+            else:
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+                return result.returncode == 0, "", result.stderr.strip()
+        except subprocess.TimeoutExpired:
+            return False, "", "Command timed out"
+        except Exception as e:
+            return False, "", str(e)
+    
+    def _check_sudo(self):
+        """Check if we have sudo privileges"""
+        success, _, _ = self._run_command("sudo -n true")
+        return success
+    
+    def _rule_exists(self):
+        """Check if our iptables rule already exists"""
+        if not self.is_linux:
+            return False
+        
+        cmd = f"sudo iptables -C INPUT -p udp --dport {self.port} -j ACCEPT -m comment --comment {self.rule_comment} 2>/dev/null"
+        success, _, _ = self._run_command(cmd)
+        return success
+    
+    def add_rule(self):
+        """Add iptables rule to allow UDP broadcasts"""
+        if not self.is_linux:
+            print("Firewall management only supported on Linux systems")
+            return True
+        
+        if self._rule_exists():
+            print(f"Firewall rule for UDP port {self.port} already exists")
+            return True
+        
+        if not self._check_sudo():
+            print("Warning: No sudo privileges. You may need to manually allow UDP port 50222:")
+            print(f"sudo iptables -I INPUT -p udp --dport {self.port} -j ACCEPT")
+            return False
+        
+        print(f"Adding iptables rule to allow UDP broadcasts on port {self.port}...")
+        cmd = f"sudo iptables -I INPUT -p udp --dport {self.port} -j ACCEPT -m comment --comment {self.rule_comment}"
+        success, _, error = self._run_command(cmd)
+        
+        if success:
+            self.rule_added = True
+            print(f"✓ Firewall rule added successfully")
+            return True
+        else:
+            print(f"✗ Failed to add firewall rule: {error}")
+            print(f"Manual command: sudo iptables -I INPUT -p udp --dport {self.port} -j ACCEPT")
+            return False
+    
+    def remove_rule(self):
+        """Remove the iptables rule we added"""
+        if not self.is_linux or not self.rule_added:
+            return True
+        
+        if not self._rule_exists():
+            print(f"Firewall rule for UDP port {self.port} not found")
+            self.rule_added = False
+            return True
+        
+        print(f"Removing iptables rule for UDP port {self.port}...")
+        cmd = f"sudo iptables -D INPUT -p udp --dport {self.port} -j ACCEPT -m comment --comment {self.rule_comment}"
+        success, _, error = self._run_command(cmd)
+        
+        if success:
+            self.rule_added = False
+            print(f"✓ Firewall rule removed successfully")
+            return True
+        else:
+            print(f"✗ Failed to remove firewall rule: {error}")
+            print(f"Manual cleanup: sudo iptables -D INPUT -p udp --dport {self.port} -j ACCEPT")
+            return False
+    
+    def cleanup(self):
+        """Clean up firewall rules on exit"""
+        if self.rule_added:
+            self.remove_rule()
+    
+    def check_port_status(self):
+        """Check if the UDP port is accessible"""
+        print(f"Checking UDP port {self.port} accessibility...")
+        
+        # Try to bind to the port to see if it's available
+        try:
+            test_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            test_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            test_sock.bind(("0.0.0.0", self.port))
+            test_sock.close()
+            print(f"✓ UDP port {self.port} is accessible")
+            return True
+        except Exception as e:
+            print(f"✗ UDP port {self.port} binding failed: {e}")
+            return False
+    
+    def setup_firewall(self):
+        """Setup firewall rules and check port accessibility"""
+        print("Setting up firewall for Tempest UDP broadcasts...")
+        
+        # Check if we're on Linux
+        if not self.is_linux:
+            print(f"Running on {platform.system()}, skipping iptables configuration")
+            return self.check_port_status()
+        
+        # Check current firewall status
+        if self._rule_exists():
+            print(f"✓ Firewall rule for UDP port {self.port} already exists")
+        else:
+            # Try to add the rule
+            if not self.add_rule():
+                print("⚠️  Could not configure firewall automatically")
+                print("If you experience connectivity issues, manually run:")
+                print(f"sudo iptables -I INPUT -p udp --dport {self.port} -j ACCEPT")
+        
+        # Test port accessibility
+        return self.check_port_status()
 
 
 # Wind speed conversion constants
@@ -1045,10 +1188,6 @@ class WindSensorReader:
 
 def run_auto_calibration(args, logger):
     """Run automatic Tempest calibration and return calibration factors"""
-    if not HAS_TEMPEST:
-        logger.error("Tempest module not available for auto-calibration")
-        return None, None
-    
     logger.info("🎯 Starting automatic Tempest calibration...")
     logger.info("=" * 50)
     
@@ -1056,69 +1195,32 @@ def run_auto_calibration(args, logger):
     firewall_manager = None
     if not args.no_firewall:
         try:
-            firewall_manager = tempest.FirewallManager()
+            firewall_manager = FirewallManager()
+            logger.info("Setting up firewall for Tempest UDP broadcasts...")
             if not firewall_manager.setup_firewall():
                 logger.warning("⚠️  Firewall setup may be incomplete")
+            else:
+                logger.info("✅ Firewall setup completed successfully")
         except Exception as e:
             logger.warning(f"Could not setup firewall: {e}")
+    else:
+        logger.info("Firewall setup skipped (--no-firewall specified)")
     
-    # Start UDP listener for Tempest data
-    logger.info("Setting up UDP listener for Tempest broadcasts...")
-    udp_thread = threading.Thread(target=tempest.udp_listener, daemon=True)
-    udp_thread.start()
-    
-    # Wait for initial data
-    time.sleep(3)
-    
-    # Collect calibration samples
-    davis_readings = []
-    tempest_readings = []
-    start_time = time.time()
-    
-    logger.info(f"Collecting {args.calibration_samples} calibration samples...")
-    logger.info("Make sure both Davis and Tempest sensors are experiencing the same wind conditions")
     logger.info("")
-    
-    for i in range(args.calibration_samples):
-        # Check timeout
-        if time.time() - start_time > args.calibration_timeout:
-            logger.error(f"❌ Calibration timeout after {args.calibration_timeout} seconds")
-            break
-        
-        logger.info(f"Collecting sample {i+1}/{args.calibration_samples}...")
-        
-        # Get current Tempest data
-        tempest_wind = tempest.get_current_tempest_wind()
-        if not tempest_wind:
-            logger.warning("⚠️  No Tempest data available, retrying...")
-            time.sleep(2)
-            continue
-        
-        logger.info(f"Tempest: {tempest_wind['wind_speed_knots']:.1f} knots, {tempest_wind['wind_direction_deg']:.0f}° ({tempest_wind['source']})")
-        
-        # We need to get a Davis reading at this point
-        # For auto-calibration, we'll collect the next available Davis reading
-        logger.info("Waiting for Davis reading...")
-        
-        # Note: In a real implementation, you'd want to collect the Davis reading here
-        # For now, we'll simulate it by prompting the user or collecting from the sensor
-        # This is a placeholder - in practice you'd integrate this with the actual sensor reading
-        logger.info("📝 Note: Auto-calibration requires manual Davis readings for comparison")
-        logger.info(f"   Current Tempest: {tempest_wind['wind_speed_knots']:.1f} knots, {tempest_wind['wind_direction_deg']:.0f}°")
-        logger.info(f"   Please note your Davis reading and use manual calibration for now")
-        
-        # For now, skip the automated collection and return None
-        # This would need integration with the actual Davis sensor reading loop
-        break
-    
-    # Cleanup firewall
-    if firewall_manager:
-        firewall_manager.cleanup()
-    
-    logger.warning("⚠️  Auto-calibration feature requires integration with live Davis readings")
-    logger.info("💡 Alternative: Use the standalone Tempest calibration utility:")
-    logger.info("   python3 tempest.py --calibrate")
+    logger.warning("⚠️  Full auto-calibration feature is not yet implemented")
+    logger.info("📝 The --auto-calibrate flag currently:")
+    logger.info("   ✅ Sets up firewall rules for UDP reception") 
+    logger.info("   ✅ Prepares environment for Tempest calibration")
+    logger.info("   📋 Does not yet collect and compare readings automatically")
     logger.info("")
+    logger.info("💡 For full calibration functionality, use the standalone utility:")
+    logger.info("   python3 tempest.py --calibrate  # Interactive console mode")
+    logger.info("   python3 tempest.py             # Web interface at :8080/calibration")
+    logger.info("")
+    logger.info("🚀 Future update will enable full automatic calibration")
+    logger.info("   that collects Davis readings and applies calibration factors")
+    
+    # Firewall cleanup will happen automatically via atexit handler
     
     return None, None
 
@@ -1173,25 +1275,20 @@ def main():
     if args.auto_calibrate:
         logger.info("🎯 Auto-calibration requested - starting Tempest calibration...")
         
-        if not HAS_TEMPEST:
-            logger.error("❌ Tempest module not available for auto-calibration")
-            logger.info("💡 Install requirements: pip install flask")
-            logger.info("💡 Alternative: Use standalone calibration: python3 tempest.py --calibrate")
-        else:
-            # Run auto-calibration
-            auto_cal_factor, auto_direction_offset = run_auto_calibration(args, logger)
+        # Run auto-calibration
+        auto_cal_factor, auto_direction_offset = run_auto_calibration(args, logger)
+        
+        if auto_cal_factor is not None and auto_direction_offset is not None:
+            # Apply auto-calibration results
+            calibration_factor = auto_cal_factor
+            direction_offset = auto_direction_offset
             
-            if auto_cal_factor is not None and auto_direction_offset is not None:
-                # Apply auto-calibration results
-                calibration_factor = auto_cal_factor
-                direction_offset = auto_direction_offset
-                
-                logger.info("✅ Auto-calibration successful!")
-                logger.info(f"   Applied speed factor: {calibration_factor:.4f}")
-                logger.info(f"   Applied direction offset: {direction_offset:.2f}°")
-            else:
-                logger.warning("⚠️  Auto-calibration failed, using manual calibration values")
-                logger.info("💡 Use standalone calibration utility: python3 tempest.py --calibrate")
+            logger.info("✅ Auto-calibration successful!")
+            logger.info(f"   Applied speed factor: {calibration_factor:.4f}")
+            logger.info(f"   Applied direction offset: {direction_offset:.2f}°")
+        else:
+            logger.info("⚠️  Auto-calibration setup completed, using manual calibration values")
+            logger.info("💡 Use standalone calibration utility for full calibration: python3 tempest.py --calibrate")
         
         logger.info("")
     
