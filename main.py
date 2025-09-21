@@ -555,6 +555,42 @@ def parse_args():
         action="store_true", 
         help="Skip automatic firewall setup for calibration"
     )
+    # Continuous calibration mode
+    parser.add_argument(
+        "--continuous-calibration", 
+        action="store_true", 
+        help="Enable continuous calibration mode - automatically adjusts calibration every 15 minutes"
+    )
+    parser.add_argument(
+        "--continuous-interval", 
+        type=int, 
+        default=900,  # 15 minutes in seconds
+        help="Interval between continuous calibration adjustments in seconds (default: 900 = 15 minutes)"
+    )
+    parser.add_argument(
+        "--continuous-samples", 
+        type=int, 
+        default=20,
+        help="Number of samples to collect for each continuous calibration calculation (default: 20)"
+    )
+    parser.add_argument(
+        "--continuous-sample-interval", 
+        type=int, 
+        default=5,
+        help="Seconds between continuous calibration samples (default: 5)"
+    )
+    parser.add_argument(
+        "--continuous-confidence-threshold", 
+        type=float, 
+        default=0.5,
+        help="Minimum confidence required for continuous calibration adjustments (default: 0.5)"
+    )
+    parser.add_argument(
+        "--continuous-adjustment-rate", 
+        type=float, 
+        default=0.3,
+        help="Rate of calibration adjustment per cycle (0.1-1.0, default: 0.3 = 30%% per cycle)"
+    )
     return parser.parse_args()
 
 
@@ -1393,6 +1429,236 @@ def run_auto_calibration(args, logger):
         return None, None
 
 
+# ---------------- Continuous Calibration for Main Plugin ----------------
+class ContinuousCalibrator:
+    """Manages continuous calibration in background while main plugin runs"""
+    
+    def __init__(self, wind_reader, args, logger):
+        self.wind_reader = wind_reader
+        self.args = args
+        self.logger = logger
+        self.running = False
+        self.thread = None
+        
+        # Calibration state
+        self.current_speed_factor = wind_reader.calibration_factor
+        self.current_direction_offset = wind_reader.direction_offset
+        
+        # Thread synchronization
+        self.calibration_lock = threading.Lock()
+        self.stop_event = threading.Event()
+        
+    def start(self):
+        """Start continuous calibration in background thread"""
+        if self.running:
+            return
+            
+        self.logger.info("🔄 Starting continuous calibration background thread...")
+        self.logger.info(f"   Calibration interval: {self.args.continuous_interval} seconds ({self.args.continuous_interval/60:.1f} minutes)")
+        self.logger.info(f"   Samples per calibration: {self.args.continuous_samples}")
+        self.logger.info(f"   Sample interval: {self.args.continuous_sample_interval} seconds")
+        self.logger.info(f"   Confidence threshold: {self.args.continuous_confidence_threshold}")
+        self.logger.info(f"   Adjustment rate: {self.args.continuous_adjustment_rate * 100:.0f}% per cycle")
+        
+        self.running = True
+        self.thread = threading.Thread(target=self._continuous_calibration_loop, daemon=True)
+        self.thread.start()
+        
+    def stop(self):
+        """Stop continuous calibration"""
+        if not self.running:
+            return
+            
+        self.logger.info("🛑 Stopping continuous calibration...")
+        self.stop_event.set()
+        self.running = False
+        
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=5)
+            
+        self.logger.info("📊 Final continuous calibration factors:")
+        self.logger.info(f"   Speed factor: {self.current_speed_factor:.4f}")
+        self.logger.info(f"   Direction offset: {self.current_direction_offset:.2f}°")
+        
+    def get_current_calibration(self):
+        """Get current calibration factors (thread-safe)"""
+        with self.calibration_lock:
+            return self.current_speed_factor, self.current_direction_offset
+            
+    def _update_calibration(self, new_speed_factor, new_direction_offset):
+        """Update calibration factors in wind reader (thread-safe)"""
+        with self.calibration_lock:
+            self.current_speed_factor = new_speed_factor
+            self.current_direction_offset = new_direction_offset
+            
+            # Update the wind reader's calibration factors
+            self.wind_reader.calibration_factor = new_speed_factor
+            self.wind_reader.direction_offset = new_direction_offset
+            
+    def _collect_calibration_samples(self):
+        """Collect calibration samples by reading from both sensors"""
+        davis_readings = []
+        tempest_readings = []
+        samples_collected = 0
+        
+        self.logger.debug(f"📊 Collecting {self.args.continuous_samples} calibration samples...")
+        
+        start_time = time.time()
+        timeout = self.args.continuous_samples * self.args.continuous_sample_interval * 3  # Generous timeout
+        
+        try:
+            with self.wind_reader.serial_connection() as ser:
+                while samples_collected < self.args.continuous_samples and not self.stop_event.is_set():
+                    if time.time() - start_time > timeout:
+                        self.logger.warning(f"⚠️  Continuous calibration sample collection timeout after {timeout} seconds")
+                        break
+                    
+                    try:
+                        # Read from Davis sensor with short timeout
+                        ser.timeout = 2.0  # Short timeout for continuous mode
+                        line = ser.readline().decode('utf-8', errors='ignore').strip()
+                        if not line:
+                            continue
+                            
+                        # Parse with current calibration factors to get raw readings
+                        davis_data = self.wind_reader.parse_wind_data(line)
+                        
+                        if davis_data:
+                            # Get corresponding Tempest reading
+                            tempest_data = get_current_tempest_wind()
+                            
+                            if tempest_data:
+                                # Convert Davis data back to raw readings for calibration calculation
+                                raw_davis_data = {
+                                    'wind_speed_knots': davis_data['wind_speed_knots'] / self.current_speed_factor,
+                                    'wind_direction_deg': (davis_data['wind_direction_deg'] - self.current_direction_offset) % 360.0
+                                }
+                                
+                                davis_readings.append(raw_davis_data)
+                                tempest_readings.append(tempest_data)
+                                samples_collected += 1
+                                
+                                self.logger.debug(f"   Sample {samples_collected}/{self.args.continuous_samples}: "
+                                                f"Davis: {raw_davis_data['wind_speed_knots']:.1f} knots, {raw_davis_data['wind_direction_deg']:.0f}° | "
+                                                f"Tempest: {tempest_data['wind_speed_knots']:.1f} knots, {tempest_data['wind_direction_deg']:.0f}°")
+                                
+                                # Wait before next sample (if not the last one)
+                                if samples_collected < self.args.continuous_samples:
+                                    if self.stop_event.wait(self.args.continuous_sample_interval):
+                                        break  # Stop event was set
+                            else:
+                                if self.stop_event.wait(1):  # Short wait if no Tempest data
+                                    break
+                        else:
+                            if self.stop_event.wait(0.5):  # Short wait if no valid Davis data
+                                break
+                                
+                    except serial.SerialTimeoutException:
+                        continue
+                    except Exception as e:
+                        self.logger.debug(f"⚠️  Error reading Davis sensor during continuous calibration: {e}")
+                        if self.stop_event.wait(1):
+                            break
+                        continue
+                        
+        except Exception as e:
+            self.logger.warning(f"⚠️  Error during continuous calibration sample collection: {e}")
+            return [], []
+            
+        return davis_readings, tempest_readings
+        
+    def _continuous_calibration_loop(self):
+        """Main continuous calibration loop running in background"""
+        self.logger.info("🔄 Continuous calibration background thread started")
+        
+        # Wait for initial Tempest data
+        tempest_ready = False
+        for _ in range(30):  # Wait up to 30 seconds
+            if self.stop_event.is_set():
+                return
+            tempest_data = get_current_tempest_wind()
+            if tempest_data:
+                tempest_ready = True
+                self.logger.info(f"✅ Tempest detected for continuous calibration: {tempest_data['wind_speed_knots']:.1f} knots, {tempest_data['wind_direction_deg']:.0f}°")
+                break
+            time.sleep(1)
+            
+        if not tempest_ready:
+            self.logger.warning("⚠️  No Tempest data available for continuous calibration - disabling continuous mode")
+            return
+            
+        # Main continuous calibration loop
+        while not self.stop_event.is_set():
+            try:
+                next_calibration_time = datetime.now() + timedelta(seconds=self.args.continuous_interval)
+                
+                self.logger.info(f"📊 Starting continuous calibration at {datetime.now().strftime('%H:%M:%S')}")
+                self.logger.info(f"⏰ Next calibration scheduled for {next_calibration_time.strftime('%H:%M:%S')}")
+                
+                # Collect calibration samples
+                davis_readings, tempest_readings = self._collect_calibration_samples()
+                
+                # Calculate new calibration if we have enough samples
+                if len(davis_readings) >= 3:
+                    self.logger.info(f"🧮 Calculating continuous calibration from {len(davis_readings)} samples...")
+                    
+                    calibration_result = calculate_calibration_factors(davis_readings, tempest_readings)
+                    
+                    if calibration_result:
+                        new_speed_factor = calibration_result['speed_calibration_factor']
+                        new_direction_offset = calibration_result['direction_offset']
+                        speed_confidence = calibration_result['speed_confidence']
+                        direction_confidence = calibration_result['direction_confidence']
+                        
+                        self.logger.info(f"📈 Calculated continuous calibration:")
+                        self.logger.info(f"   Speed factor: {new_speed_factor:.4f} (confidence: {speed_confidence:.3f})")
+                        self.logger.info(f"   Direction offset: {new_direction_offset:.2f}° (confidence: {direction_confidence:.3f})")
+                        
+                        # Apply calibration if confidence meets threshold
+                        if (speed_confidence >= self.args.continuous_confidence_threshold and 
+                            direction_confidence >= self.args.continuous_confidence_threshold):
+                            
+                            # Gradually adjust calibration to avoid sudden jumps
+                            adjustment_rate = self.args.continuous_adjustment_rate
+                            
+                            adjusted_speed_factor = (
+                                self.current_speed_factor * (1 - adjustment_rate) + 
+                                new_speed_factor * adjustment_rate
+                            )
+                            adjusted_direction_offset = (
+                                self.current_direction_offset * (1 - adjustment_rate) + 
+                                new_direction_offset * adjustment_rate
+                            )
+                            
+                            self._update_calibration(adjusted_speed_factor, adjusted_direction_offset)
+                            
+                            self.logger.info(f"✅ Applied continuous calibration adjustment:")
+                            self.logger.info(f"   New speed factor: {adjusted_speed_factor:.4f}")
+                            self.logger.info(f"   New direction offset: {adjusted_direction_offset:.2f}°")
+                        else:
+                            self.logger.info(f"⚠️  Low confidence - keeping current calibration")
+                            self.logger.info(f"   Current speed factor: {self.current_speed_factor:.4f}")
+                            self.logger.info(f"   Current direction offset: {self.current_direction_offset:.2f}°")
+                    else:
+                        self.logger.warning("⚠️  Could not calculate continuous calibration factors - keeping current calibration")
+                else:
+                    self.logger.warning(f"⚠️  Insufficient samples ({len(davis_readings)}) for continuous calibration - need at least 3")
+                
+                # Wait until next calibration time
+                sleep_time = (next_calibration_time - datetime.now()).total_seconds()
+                if sleep_time > 0:
+                    self.logger.debug(f"⏳ Continuous calibration waiting {sleep_time:.0f} seconds until next cycle...")
+                    if self.stop_event.wait(sleep_time):
+                        break  # Stop event was set
+                        
+            except Exception as e:
+                self.logger.error(f"❌ Error in continuous calibration loop: {e}")
+                # Wait a bit before retrying
+                if self.stop_event.wait(60):  # Wait 1 minute before retry
+                    break
+                    
+        self.logger.info("🔄 Continuous calibration background thread stopped")
+
 
 def main():
     args = parse_args()
@@ -1450,6 +1716,32 @@ def main():
     # Initialize data collector for averaged reporting
     data_collector = WindDataCollector(args.reporting_interval)
     
+    # Initialize continuous calibration if requested
+    continuous_calibrator = None
+    if args.continuous_calibration:
+        logger.info("🔄 Continuous calibration mode enabled")
+        
+        # Start Tempest UDP listener for continuous calibration
+        if not args.no_firewall:
+            firewall_manager_continuous = FirewallManager()
+            logger.info("Setting up firewall for continuous calibration Tempest UDP broadcasts...")
+            if not firewall_manager_continuous.setup_firewall():
+                logger.warning("⚠️  Firewall setup may be incomplete for continuous calibration")
+            else:
+                logger.info("✅ Firewall setup completed for continuous calibration")
+        
+        # Start UDP listener thread for continuous calibration
+        udp_thread_continuous = threading.Thread(target=tempest_udp_listener, daemon=True)
+        udp_thread_continuous.start()
+        logger.info("🌐 Started Tempest UDP listener for continuous calibration")
+        
+        # Initialize continuous calibrator
+        continuous_calibrator = ContinuousCalibrator(wind_reader, args, logger)
+        
+        # Wait a moment for Tempest data, then start continuous calibration
+        logger.info("⏳ Waiting briefly for Tempest data before starting continuous calibration...")
+        time.sleep(5)
+        continuous_calibrator.start()
 
     
     # Start web server if requested
@@ -1596,9 +1888,17 @@ def main():
                 
     except KeyboardInterrupt:
         logger.info("Wind sensor plugin stopped by user")
+        if continuous_calibrator:
+            continuous_calibrator.stop()
     except Exception as e:
         logger.error(f"Unexpected error in wind sensor plugin: {e}")
+        if continuous_calibrator:
+            continuous_calibrator.stop()
         raise
+    finally:
+        # Ensure continuous calibration is stopped on any exit
+        if continuous_calibrator:
+            continuous_calibrator.stop()
 
 
 if __name__ == "__main__":

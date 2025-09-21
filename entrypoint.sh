@@ -17,10 +17,11 @@ show_help() {
     echo "  docker run ... ericvh/waggle-davis-wind-sensor [OPTIONS]"
     echo ""
     echo "Modes (set via DAVIS_MODE environment variable):"
-    echo "  main      - Run Davis wind sensor plugin (default)"
-    echo "  calibrate - Run Tempest calibration (interactive)"
-    echo "  web       - Run Tempest calibration web interface"
-    echo "  test      - Test Tempest UDP connection"
+    echo "  main       - Run Davis wind sensor plugin (default)"
+    echo "  calibrate  - Run Tempest calibration (interactive)"
+    echo "  web        - Run Tempest calibration web interface"
+    echo "  continuous - Run continuous auto-calibration (15-minute intervals)"
+    echo "  test       - Test Tempest UDP connection"
     echo ""
     echo "Examples:"
     echo "  # Run main Davis plugin"
@@ -32,11 +33,14 @@ show_help() {
     echo "  # Run calibration web interface"
     echo "  docker run -e DAVIS_MODE=web -p 8080:8080 --network host ericvh/waggle-davis-wind-sensor"
     echo ""
+    echo "  # Run continuous auto-calibration"
+    echo "  docker run -e DAVIS_MODE=continuous --device=/dev/ttyACM2 --network host ericvh/waggle-davis-wind-sensor"
+    echo ""
     echo "  # Test UDP connection"
     echo "  docker run -e DAVIS_MODE=test --network host ericvh/waggle-davis-wind-sensor"
     echo ""
     echo "Environment Variables:"
-    echo "  DAVIS_MODE        - Operation mode (main|calibrate|web|test)"
+    echo "  DAVIS_MODE        - Operation mode (main|calibrate|web|continuous|test)"
     echo "  TEMPEST_PORT      - Tempest web server port (default: 8080)"
     echo "  NO_FIREWALL       - Skip firewall setup (set to 'true')"
     echo ""
@@ -208,9 +212,39 @@ main() {
             exec python3 tempest.py "${tempest_args[@]}"
             ;;
             
+        "continuous")
+            echo "🔄 Starting Continuous Tempest Calibration"
+            echo "=========================================="
+            echo "This mode continuously compares Davis and Tempest readings"
+            echo "and automatically adjusts calibration every 15 minutes"
+            echo ""
+            
+            # Check for device in arguments (similar to main mode)
+            for arg in "${EXTRA_ARGS[@]}"; do
+                if [[ "$arg" == --port* ]] || [[ "$arg" == /dev/* ]]; then
+                    if [[ "$arg" == /dev/* ]]; then
+                        wait_for_device "$arg"
+                    elif [[ "$arg" == --port ]]; then
+                        # Next argument should be the device
+                        wait_for_device "${EXTRA_ARGS[1]}"
+                    fi
+                    break
+                fi
+            done
+            
+            # Build tempest args
+            tempest_args=("--continuous")
+            if [ "$NO_FIREWALL" = "true" ]; then
+                tempest_args+=("--no-firewall")
+            fi
+            tempest_args+=("${EXTRA_ARGS[@]}")
+            
+            exec python3 tempest.py "${tempest_args[@]}"
+            ;;
+            
         *)
             echo "❌ Unknown mode: $MODE"
-            echo "Valid modes: main, calibrate, web, test"
+            echo "Valid modes: main, calibrate, web, continuous, test"
             echo ""
             show_help
             exit 1

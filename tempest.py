@@ -20,8 +20,10 @@ import sys
 import platform
 import signal
 import atexit
+import serial
+import re
 from time import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 
 UDP_PORT = 50222
@@ -999,6 +1001,251 @@ def interactive_calibration():
     else:
         print("\nNeed at least 2 readings for calibration")
 
+# ---------------- Continuous Calibration Mode ----------------
+def parse_davis_wind_data(data_line, calibration_factor=1.0, direction_offset=0.0, direction_scale=1.0):
+    """
+    Parse Davis wind sensor data from serial input
+    Expected format from Arduino: "wind: iteration potvalue rpmtops rpmraw"
+    """
+    data_line = data_line.strip()
+    
+    # Pattern for Davis Arduino output: "wind: %d %d %d %d"
+    pattern = r'wind:\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)'
+    
+    match = re.search(pattern, data_line)
+    if match:
+        try:
+            iteration = int(match.group(1))
+            pot_value = int(match.group(2))
+            rpm_tops = int(match.group(3))
+            rpm_raw = int(match.group(4))
+            
+            # Calculate wind direction from potentiometer value with calibration
+            direction_deg = (pot_value / 1024.0) * 360.0
+            direction_deg = (direction_deg * direction_scale + direction_offset) % 360.0
+            
+            if direction_deg < 0:
+                direction_deg += 360.0
+            
+            # Convert RPM to wind speed (Davis anemometer calibration)
+            # Common formula: Wind Speed (m/s) = RPM * 0.098
+            speed_mps = rpm_tops * 0.098 * calibration_factor
+            speed_knots = speed_mps * 1.94384  # m/s to knots
+            
+            return {
+                'wind_speed_knots': speed_knots,
+                'wind_direction_deg': direction_deg,
+                'iteration': iteration,
+                'pot_value': pot_value,
+                'rpm_tops': rpm_tops,
+                'rpm_raw': rpm_raw
+            }
+                
+        except (ValueError, IndexError):
+            return None
+    
+    return None
+
+def continuous_calibration(args):
+    """Run continuous calibration comparing Davis and Tempest readings"""
+    print("Davis Wind Sensor Continuous Calibration using Local Tempest Station")
+    print("=" * 70)
+    print(f"Calibration interval: {args.calibration_interval} seconds ({args.calibration_interval/60:.1f} minutes)")
+    print(f"Samples per calibration: {args.sample_count}")
+    print(f"Interval between samples: {args.sample_interval} seconds")
+    print(f"Davis sensor port: {args.davis_port}")
+    print()
+    
+    # Setup firewall rules for UDP reception
+    if not firewall_manager.skip_setup:
+        print("Setting up network access for Tempest UDP broadcasts...")
+        if not firewall_manager.setup_firewall():
+            print("⚠️  Warning: Network setup may be incomplete")
+            print("If you don't receive Tempest data, check your firewall settings")
+        print()
+    else:
+        print("Firewall setup skipped")
+        print()
+    
+    # Start UDP listener in background
+    print("🌐 Starting Tempest UDP listener...")
+    udp_thread = threading.Thread(target=udp_listener, daemon=True)
+    udp_thread.start()
+    
+    # Wait for initial Tempest data
+    print("⏳ Waiting for Tempest UDP broadcasts...")
+    import time
+    time.sleep(5)
+    
+    tempest_wind = get_current_tempest_wind()
+    if not tempest_wind:
+        print("❌ No Tempest data received. Ensure your Tempest station is broadcasting.")
+        print("💡 Troubleshooting:")
+        print("   - Check that Tempest hub is on same network")
+        print("   - Verify UDP port 50222 is accessible")
+        print("   - Try: python3 tempest.py --test-connection")
+        return
+    
+    print(f"✅ Tempest detected! Current reading: {tempest_wind['wind_speed_knots']:.1f} knots, {tempest_wind['wind_direction_deg']:.0f}° ({tempest_wind['source']})")
+    print()
+    
+    # Current calibration factors
+    current_calibration_factor = 1.0
+    current_direction_offset = 0.0
+    
+    print("🔄 Starting continuous calibration mode...")
+    print("Press Ctrl+C to stop")
+    print()
+    
+    try:
+        # Main continuous calibration loop
+        while True:
+            next_calibration_time = datetime.now() + timedelta(seconds=args.calibration_interval)
+            
+            print(f"📊 Starting calibration data collection at {datetime.now().strftime('%H:%M:%S')}")
+            print(f"⏰ Next calibration scheduled for {next_calibration_time.strftime('%H:%M:%S')}")
+            
+            # Collect calibration samples
+            davis_readings = []
+            tempest_readings = []
+            samples_collected = 0
+            
+            try:
+                # Open serial connection to Davis sensor
+                ser = serial.Serial(
+                    port=args.davis_port,
+                    baudrate=115200,
+                    timeout=5.0,
+                    bytesize=serial.EIGHTBITS,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE
+                )
+                print(f"✅ Connected to Davis sensor on {args.davis_port}")
+                
+                # Collect samples
+                start_time = time.time()
+                timeout = args.sample_count * args.sample_interval * 2  # Generous timeout
+                
+                while samples_collected < args.sample_count:
+                    if time.time() - start_time > timeout:
+                        print(f"⚠️  Sample collection timeout after {timeout} seconds")
+                        break
+                    
+                    try:
+                        # Read from Davis sensor
+                        line = ser.readline().decode('utf-8', errors='ignore').strip()
+                        if not line:
+                            continue
+                            
+                        davis_data = parse_davis_wind_data(
+                            line, 
+                            current_calibration_factor, 
+                            current_direction_offset, 
+                            1.0  # direction_scale
+                        )
+                        
+                        if davis_data:
+                            # Get corresponding Tempest reading
+                            tempest_data = get_current_tempest_wind()
+                            
+                            if tempest_data:
+                                davis_readings.append(davis_data)
+                                tempest_readings.append(tempest_data)
+                                samples_collected += 1
+                                
+                                print(f"   Sample {samples_collected}/{args.sample_count}: "
+                                     f"Davis: {davis_data['wind_speed_knots']:.1f} knots, {davis_data['wind_direction_deg']:.0f}° | "
+                                     f"Tempest: {tempest_data['wind_speed_knots']:.1f} knots, {tempest_data['wind_direction_deg']:.0f}°")
+                                
+                                # Wait before next sample (if not the last one)
+                                if samples_collected < args.sample_count:
+                                    time.sleep(args.sample_interval)
+                            else:
+                                time.sleep(1)  # Short wait if no Tempest data
+                        else:
+                            time.sleep(0.5)  # Short wait if no valid Davis data
+                            
+                    except serial.SerialTimeoutException:
+                        continue
+                    except Exception as e:
+                        print(f"⚠️  Error reading Davis sensor: {e}")
+                        time.sleep(1)
+                        continue
+                
+                ser.close()
+                
+            except serial.SerialException as e:
+                print(f"❌ Could not connect to Davis sensor: {e}")
+                print("⏳ Will retry at next calibration interval...")
+                
+                # Wait until next calibration time
+                sleep_time = (next_calibration_time - datetime.now()).total_seconds()
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                continue
+            
+            # Calculate new calibration if we have enough samples
+            if samples_collected >= 3:
+                print(f"\n🧮 Calculating calibration from {samples_collected} samples...")
+                
+                calibration_result = calculate_calibration_factors(davis_readings, tempest_readings)
+                
+                if calibration_result:
+                    new_speed_factor = calibration_result['speed_calibration_factor']
+                    new_direction_offset = calibration_result['direction_offset']
+                    speed_confidence = calibration_result['speed_confidence']
+                    direction_confidence = calibration_result['direction_confidence']
+                    
+                    print(f"📈 Calculated calibration:")
+                    print(f"   Speed factor: {new_speed_factor:.4f} (confidence: {speed_confidence:.3f})")
+                    print(f"   Direction offset: {new_direction_offset:.2f}° (confidence: {direction_confidence:.3f})")
+                    
+                    # Apply calibration if confidence is reasonable
+                    min_confidence = 0.5  # Lower threshold for continuous mode
+                    if speed_confidence >= min_confidence and direction_confidence >= min_confidence:
+                        # Gradually adjust calibration to avoid sudden jumps
+                        adjustment_weight = 0.3  # Apply 30% of the calculated adjustment each time
+                        
+                        current_calibration_factor = (
+                            current_calibration_factor * (1 - adjustment_weight) + 
+                            new_speed_factor * adjustment_weight
+                        )
+                        current_direction_offset = (
+                            current_direction_offset * (1 - adjustment_weight) + 
+                            new_direction_offset * adjustment_weight
+                        )
+                        
+                        print(f"✅ Applied gradual calibration adjustment:")
+                        print(f"   New speed factor: {current_calibration_factor:.4f}")
+                        print(f"   New direction offset: {current_direction_offset:.2f}°")
+                    else:
+                        print(f"⚠️  Low confidence - keeping current calibration")
+                        print(f"   Current speed factor: {current_calibration_factor:.4f}")
+                        print(f"   Current direction offset: {current_direction_offset:.2f}°")
+                else:
+                    print("⚠️  Could not calculate calibration factors - keeping current calibration")
+            else:
+                print(f"⚠️  Insufficient samples ({samples_collected}) - need at least 3. Keeping current calibration.")
+            
+            print()
+            
+            # Wait until next calibration time
+            sleep_time = (next_calibration_time - datetime.now()).total_seconds()
+            if sleep_time > 0:
+                print(f"⏳ Waiting {sleep_time:.0f} seconds until next calibration...")
+                time.sleep(sleep_time)
+    
+    except KeyboardInterrupt:
+        print("\n🛑 Continuous calibration stopped by user")
+        print(f"📊 Final calibration factors:")
+        print(f"   Speed factor: {current_calibration_factor:.4f}")
+        print(f"   Direction offset: {current_direction_offset:.2f}°")
+        print("💡 To use these values manually:")
+        print(f"   python3 main.py --calibration-factor {current_calibration_factor:.4f} --direction-offset {current_direction_offset:.2f}")
+    except Exception as e:
+        print(f"❌ Unexpected error in continuous calibration: {e}")
+        raise
+
 def main():
     parser = argparse.ArgumentParser(
         description="Tempest Weather Station UDP Receiver with Davis Calibration"
@@ -1023,6 +1270,34 @@ def main():
         "--test-connection", 
         action="store_true",
         help="Test UDP connection and firewall setup, then exit"
+    )
+    parser.add_argument(
+        "--continuous", 
+        action="store_true",
+        help="Run continuous calibration mode - compares Davis and Tempest readings and auto-adjusts every 15 minutes"
+    )
+    parser.add_argument(
+        "--davis-port", 
+        default="/dev/ttyACM2",
+        help="Davis sensor serial port (default: /dev/ttyACM2) - only used in continuous mode"
+    )
+    parser.add_argument(
+        "--calibration-interval", 
+        type=int, 
+        default=900,  # 15 minutes in seconds
+        help="Interval between calibration adjustments in seconds (default: 900 = 15 minutes)"
+    )
+    parser.add_argument(
+        "--sample-count", 
+        type=int, 
+        default=20,
+        help="Number of samples to collect for each calibration calculation (default: 20)"
+    )
+    parser.add_argument(
+        "--sample-interval", 
+        type=int, 
+        default=5,
+        help="Seconds between calibration samples (default: 5)"
     )
     
     args = parser.parse_args()
@@ -1068,7 +1343,14 @@ def main():
         
         return
     
-    if args.calibrate:
+    if args.continuous:
+        # Skip firewall setup if requested
+        if args.no_firewall:
+            print("Skipping automatic firewall configuration")
+            firewall_manager.skip_setup = True
+        
+        continuous_calibration(args)
+    elif args.calibrate:
         # Skip firewall setup if requested
         if args.no_firewall:
             print("Skipping automatic firewall configuration")
