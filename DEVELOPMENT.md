@@ -2,6 +2,136 @@
 
 This document provides comprehensive instructions for future development work on the Davis Wind Sensor Plugin project.
 
+## 🏗️ Development Environment Setup
+
+### Prerequisites
+- Python 3.7 or higher
+- Git for version control
+- Docker (optional, for container testing)
+
+### 1. Initial Setup
+
+**Clone the repository:**
+```bash
+git clone <repository-url>
+cd waggle-davis
+```
+
+**Create virtual environment:**
+```bash
+# Create virtual environment
+python3 -m venv venv
+
+# Activate virtual environment
+# On macOS/Linux:
+source venv/bin/activate
+
+# On Windows:
+# venv\Scripts\activate
+```
+
+**Install dependencies:**
+```bash
+# With virtual environment activated
+pip install -r requirements.txt
+```
+
+**Verify installation:**
+```bash
+# Test that main script loads without errors
+python3 main.py --help
+python3 tempest.py --help
+```
+
+### 2. Working with Virtual Environment
+
+**Always activate before development:**
+```bash
+# Navigate to project directory
+cd /path/to/waggle-davis
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Your prompt should show (venv) indicating it's active
+(venv) $ python3 main.py --help
+```
+
+**Deactivate when finished:**
+```bash
+# Deactivate virtual environment
+deactivate
+```
+
+### 3. Managing Dependencies
+
+**Adding new dependencies:**
+```bash
+# With venv activated
+pip install new-package-name
+
+# Update requirements.txt
+pip freeze > requirements.txt
+
+# Commit the updated requirements.txt
+git add requirements.txt
+git commit -m "Add new-package-name dependency"
+```
+
+**Updating existing dependencies:**
+```bash
+# With venv activated
+pip install --upgrade package-name
+
+# Update requirements.txt
+pip freeze > requirements.txt
+```
+
+### 4. Environment Best Practices
+
+**✅ DO:**
+- Always use the virtual environment for development
+- Keep `requirements.txt` updated when adding dependencies
+- Activate the virtual environment before running any Python commands
+- Test that the environment works: `python3 main.py --help`
+
+**❌ DON'T:**
+- Install packages globally with `--break-system-packages` (development only)
+- Run development commands without activating the virtual environment
+- Commit the `venv/` directory (it's in `.gitignore`)
+- Mix system Python packages with venv packages
+
+### 5. Troubleshooting Environment Issues
+
+**Virtual environment not working:**
+```bash
+# Remove and recreate venv
+rm -rf venv
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+**Import errors:**
+```bash
+# Verify you're in virtual environment
+which python3  # Should show path to venv/bin/python3
+
+# Check installed packages
+pip list
+
+# Reinstall requirements if needed
+pip install -r requirements.txt
+```
+
+**System Python conflicts:**
+```bash
+# Always use virtual environment to avoid:
+# - externally-managed-environment errors
+# - Package version conflicts
+# - System-wide package pollution
+```
+
 ## 📝 Development Workflow
 
 ### 1. Before Starting Work
@@ -149,7 +279,13 @@ for long-term deployments without manual intervention.
 
 ### Before Committing
 
-1. **Syntax Check**
+1. **Activate Virtual Environment**
+   ```bash
+   # Always activate venv first
+   source venv/bin/activate
+   ```
+
+2. **Syntax Check**
    ```bash
    python3 -m py_compile main.py
    python3 -m py_compile tempest.py
@@ -320,6 +456,9 @@ docker logs container-name
 
 ### Essential Commands
 ```bash
+# Activate virtual environment (ALWAYS FIRST)
+source venv/bin/activate
+
 # Check status and pull latest
 git status && git pull origin main
 
@@ -334,9 +473,13 @@ git add . && git commit -m "Descriptive message with details"
 
 # Push to repository
 git push origin main
+
+# Deactivate when finished
+deactivate
 ```
 
 ### File Update Checklist
+- [ ] Activate virtual environment (`source venv/bin/activate`)
 - [ ] Update TODO.md with progress
 - [ ] Test syntax with py_compile
 - [ ] Update README.md if user-facing changes
