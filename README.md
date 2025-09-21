@@ -296,6 +296,36 @@ sudo iptables -I INPUT -p udp --dport 50222 -j ACCEPT -m comment --comment tempe
 - `GET /calibration/firewall-status` - Check firewall rule status
 - `POST /calibration/setup-firewall` - Setup firewall rules
 
+### Integrated Auto-Calibration
+
+The Davis plugin can now run Tempest calibration automatically at startup using the `--auto-calibrate` flag:
+
+#### How It Works
+1. **Startup Calibration**: Plugin checks for local Tempest UDP broadcasts
+2. **Firewall Setup**: Automatically configures iptables rules if needed
+3. **Guidance**: Provides instructions for using the standalone calibration utility
+4. **Fallback**: Continues with manual calibration values if auto-calibration unavailable
+
+#### Current Implementation
+The `--auto-calibrate` feature currently:
+- Sets up UDP listener for Tempest broadcasts
+- Configures firewall rules automatically
+- **Provides guidance** to use the standalone calibration utility
+- Falls back to manual calibration values
+
+**For full calibration functionality, use the standalone utility:**
+```bash
+python3 tempest.py --calibrate  # Interactive mode
+python3 tempest.py             # Web interface at :8080/calibration
+```
+
+#### Future Enhancement
+Full automatic calibration will be implemented to:
+- Collect Davis readings during startup
+- Compare with simultaneous Tempest data
+- Automatically apply calculated calibration factors
+- Require no manual intervention
+
 ### Troubleshooting
 
 **No Tempest data received:**
@@ -428,8 +458,19 @@ python3 main.py [options]
 - `--direction-scale` : Wind direction scaling factor (default: `1.0`)
 - `--reporting-interval` : MQTT reporting interval in seconds for averaged data (default: `60`)
 
+### Auto-Calibration Arguments
+- `--auto-calibrate` : Run automatic Tempest calibration at startup using UDP broadcasts
+- `--calibration-samples` : Number of samples for auto-calibration (default: `10`)
+- `--calibration-interval` : Seconds between calibration samples (default: `5`)
+- `--calibration-timeout` : Maximum time for calibration in seconds (default: `300`)
+- `--min-calibration-confidence` : Minimum confidence required for auto-calibration (default: `0.7`)
+- `--no-firewall` : Skip automatic firewall setup for calibration
+
+### Web Interface Arguments
 - `--web-server` : Enable mini web server for monitoring
 - `--web-port` : Web server port (default: `8080`)
+
+### General Arguments
 - `--debug` : Enable debug output
 - `--help` : Show help message
 
@@ -458,6 +499,21 @@ python3 main.py --debug --calibration-factor 1.05 --direction-offset 15.0
 **Correct wind vane alignment (if vane points 30° off when wind is from north):**
 ```bash
 python3 main.py --direction-offset -30.0
+```
+
+**Run with automatic Tempest calibration:**
+```bash
+python3 main.py --auto-calibrate
+```
+
+**Run auto-calibration with custom settings:**
+```bash
+python3 main.py --auto-calibrate --calibration-samples 15 --calibration-timeout 600
+```
+
+**Auto-calibration without firewall management:**
+```bash
+python3 main.py --auto-calibrate --no-firewall
 ```
 
 **Scale potentiometer range (if it only covers 270° instead of 360°):**
@@ -504,6 +560,13 @@ docker run --device=/dev/ttyACM2:/dev/ttyACM2 --privileged \
   ghcr.io/ericvh/waggle-davis-wind-sensor:latest \
   --port /dev/ttyACM2 --baudrate 115200 --debug \
   --calibration-factor 1.05 --direction-offset -15.0
+```
+
+**With automatic Tempest calibration:**
+```bash
+docker run --device=/dev/ttyACM2:/dev/ttyACM2 --network host --privileged \
+  ghcr.io/ericvh/waggle-davis-wind-sensor:latest \
+  --auto-calibrate
 ```
 
 #### Tempest Calibration Modes

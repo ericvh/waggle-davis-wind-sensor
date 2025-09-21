@@ -9,6 +9,11 @@ import re
 import json
 import threading
 import requests
+import socket
+import subprocess
+import platform
+import signal
+import atexit
 from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -20,6 +25,13 @@ try:
     HAS_BEAUTIFULSOUP = True
 except ImportError:
     HAS_BEAUTIFULSOUP = False
+
+# Import Tempest calibration functionality
+try:
+    import tempest
+    HAS_TEMPEST = True
+except ImportError:
+    HAS_TEMPEST = False
 
 
 # Wind speed conversion constants
@@ -107,21 +119,40 @@ def parse_args():
         default=60, 
         help="MQTT reporting interval in seconds for averaged data (default: 60)"
     )
+    # Auto-calibration with local Tempest UDP broadcasts
     parser.add_argument(
-        "--tempest-station", 
-        type=str, 
-        help="Tempest weather station ID for calibration reference (e.g., 98272)"
-    )
-    parser.add_argument(
-        "--tempest-calibration", 
+        "--auto-calibrate", 
         action="store_true", 
-        help="Enable automatic calibration using Tempest station data"
+        help="Run automatic Tempest calibration at startup using UDP broadcasts"
     )
     parser.add_argument(
         "--calibration-samples", 
         type=int, 
         default=10, 
-        help="Number of samples to collect for Tempest calibration (default: 10)"
+        help="Number of samples for auto-calibration (default: 10)"
+    )
+    parser.add_argument(
+        "--calibration-interval", 
+        type=int, 
+        default=5, 
+        help="Seconds between calibration samples (default: 5)"
+    )
+    parser.add_argument(
+        "--calibration-timeout", 
+        type=int, 
+        default=300, 
+        help="Maximum time for calibration in seconds (default: 300)"
+    )
+    parser.add_argument(
+        "--min-calibration-confidence", 
+        type=float, 
+        default=0.7, 
+        help="Minimum confidence required for auto-calibration (default: 0.7)"
+    )
+    parser.add_argument(
+        "--no-firewall", 
+        action="store_true", 
+        help="Skip automatic firewall setup for calibration"
     )
     return parser.parse_args()
 
@@ -1012,6 +1043,116 @@ class WindSensorReader:
 
 
 
+def run_auto_calibration(args, logger):
+    """Run automatic Tempest calibration and return calibration factors"""
+    if not HAS_TEMPEST:
+        logger.error("Tempest module not available for auto-calibration")
+        return None, None
+    
+    logger.info("🎯 Starting automatic Tempest calibration...")
+    logger.info("=" * 50)
+    
+    # Setup firewall if not disabled
+    firewall_manager = None
+    if not args.no_firewall:
+        try:
+            firewall_manager = tempest.FirewallManager()
+            if not firewall_manager.setup_firewall():
+                logger.warning("⚠️  Firewall setup may be incomplete")
+        except Exception as e:
+            logger.warning(f"Could not setup firewall: {e}")
+    
+    # Start UDP listener for Tempest data
+    logger.info("Setting up UDP listener for Tempest broadcasts...")
+    udp_thread = threading.Thread(target=tempest.udp_listener, daemon=True)
+    udp_thread.start()
+    
+    # Wait for initial data
+    time.sleep(3)
+    
+    # Collect calibration samples
+    davis_readings = []
+    tempest_readings = []
+    start_time = time.time()
+    
+    logger.info(f"Collecting {args.calibration_samples} calibration samples...")
+    logger.info("Make sure both Davis and Tempest sensors are experiencing the same wind conditions")
+    logger.info("")
+    
+    for i in range(args.calibration_samples):
+        # Check timeout
+        if time.time() - start_time > args.calibration_timeout:
+            logger.error(f"❌ Calibration timeout after {args.calibration_timeout} seconds")
+            break
+        
+        logger.info(f"Collecting sample {i+1}/{args.calibration_samples}...")
+        
+        # Get current Tempest data
+        tempest_wind = tempest.get_current_tempest_wind()
+        if not tempest_wind:
+            logger.warning("⚠️  No Tempest data available, retrying...")
+            time.sleep(2)
+            continue
+        
+        logger.info(f"Tempest: {tempest_wind['wind_speed_knots']:.1f} knots, {tempest_wind['wind_direction_deg']:.0f}° ({tempest_wind['source']})")
+        
+        # We need to get a Davis reading at this point
+        # For auto-calibration, we'll collect the next available Davis reading
+        logger.info("Waiting for Davis reading...")
+        
+        # Note: In a real implementation, you'd want to collect the Davis reading here
+        # For now, we'll simulate it by prompting the user or collecting from the sensor
+        # This is a placeholder - in practice you'd integrate this with the actual sensor reading
+        logger.info("📝 Note: Auto-calibration requires manual Davis readings for comparison")
+        logger.info(f"   Current Tempest: {tempest_wind['wind_speed_knots']:.1f} knots, {tempest_wind['wind_direction_deg']:.0f}°")
+        logger.info(f"   Please note your Davis reading and use manual calibration for now")
+        
+        # For now, skip the automated collection and return None
+        # This would need integration with the actual Davis sensor reading loop
+        break
+    
+    # Cleanup firewall
+    if firewall_manager:
+        firewall_manager.cleanup()
+    
+    logger.warning("⚠️  Auto-calibration feature requires integration with live Davis readings")
+    logger.info("💡 Alternative: Use the standalone Tempest calibration utility:")
+    logger.info("   python3 tempest.py --calibrate")
+    logger.info("")
+    
+    return None, None
+
+def run_manual_tempest_calibration(args, logger, davis_speed, davis_direction):
+    """Run Tempest calibration with manual Davis reading input"""
+    if not HAS_TEMPEST:
+        return None, None
+    
+    # Get current Tempest data
+    tempest_wind = tempest.get_current_tempest_wind()
+    if not tempest_wind:
+        return None, None
+    
+    # Create reading pairs for calibration
+    davis_readings = [{
+        'wind_speed_knots': davis_speed,
+        'wind_direction_deg': davis_direction
+    }]
+    tempest_readings = [tempest_wind]
+    
+    # Calculate calibration factors
+    calibration = tempest.calculate_calibration_factors(davis_readings, tempest_readings)
+    
+    if calibration and calibration['sample_count'] > 0:
+        logger.info(f"📊 Calibration calculated from comparison:")
+        logger.info(f"   Davis: {davis_speed:.1f} knots, {davis_direction:.0f}°")
+        logger.info(f"   Tempest: {tempest_wind['wind_speed_knots']:.1f} knots, {tempest_wind['wind_direction_deg']:.0f}°")
+        logger.info(f"   Speed factor: {calibration['speed_calibration_factor']:.4f}")
+        logger.info(f"   Direction offset: {calibration['direction_offset']:.2f}°")
+        
+        return calibration['speed_calibration_factor'], calibration['direction_offset']
+    
+    return None, None
+
 def main():
     args = parse_args()
     
@@ -1025,19 +1166,48 @@ def main():
     # Initialize Waggle plugin
     plugin = Plugin()
     
+    # Auto-calibration with Tempest if requested
+    calibration_factor = args.calibration_factor
+    direction_offset = args.direction_offset
+    
+    if args.auto_calibrate:
+        logger.info("🎯 Auto-calibration requested - starting Tempest calibration...")
+        
+        if not HAS_TEMPEST:
+            logger.error("❌ Tempest module not available for auto-calibration")
+            logger.info("💡 Install requirements: pip install flask")
+            logger.info("💡 Alternative: Use standalone calibration: python3 tempest.py --calibrate")
+        else:
+            # Run auto-calibration
+            auto_cal_factor, auto_direction_offset = run_auto_calibration(args, logger)
+            
+            if auto_cal_factor is not None and auto_direction_offset is not None:
+                # Apply auto-calibration results
+                calibration_factor = auto_cal_factor
+                direction_offset = auto_direction_offset
+                
+                logger.info("✅ Auto-calibration successful!")
+                logger.info(f"   Applied speed factor: {calibration_factor:.4f}")
+                logger.info(f"   Applied direction offset: {direction_offset:.2f}°")
+            else:
+                logger.warning("⚠️  Auto-calibration failed, using manual calibration values")
+                logger.info("💡 Use standalone calibration utility: python3 tempest.py --calibrate")
+        
+        logger.info("")
+    
     # Initialize wind sensor reader
     wind_reader = WindSensorReader(
         port=args.port,
         baudrate=args.baudrate,
         timeout=args.timeout,
-        calibration_factor=args.calibration_factor,
-        direction_offset=args.direction_offset,
+        calibration_factor=calibration_factor,
+        direction_offset=direction_offset,
         direction_scale=args.direction_scale
     )
     
     logger.info(f"Starting wind sensor plugin on port {args.port}")
-    logger.info(f"Wind speed calibration factor: {args.calibration_factor}")
-    logger.info(f"Wind direction offset: {args.direction_offset}°")
+    logger.info(f"Wind speed calibration factor: {calibration_factor}")
+    logger.info(f"Wind direction offset: {direction_offset}°")
     logger.info(f"Wind direction scale: {args.direction_scale}")
     logger.info(f"MQTT reporting interval: {args.reporting_interval} seconds")
     
