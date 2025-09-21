@@ -31,6 +31,15 @@
   - Real-time calibration factor calculation and confidence assessment
   - Automatic application of calibration factors when confidence meets threshold
   - Comprehensive error handling and user guidance
+- [x] **Continuous calibration mode for automatic long-term adjustments** 
+  - Added continuous calibration mode to entrypoint.sh (DAVIS_MODE=continuous)
+  - Standalone continuous calibration in tempest.py (--continuous flag)
+  - Background continuous calibration in main.py (--continuous-calibration flag)
+  - Automatic 15-minute interval adjustments (configurable)
+  - Gradual calibration adjustments (30% per cycle) to prevent sudden jumps
+  - Confidence-based calibration application with configurable thresholds
+  - Thread-safe operation without disrupting normal sensor data collection
+  - Robust error handling with automatic retry logic for long-term deployments
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
@@ -41,6 +50,14 @@
 - [ ] Validate WXT-style topic publishing
 - [ ] Test serial port connection reliability with Arduino
 - [ ] Validate Docker deployment on Waggle nodes
+- [ ] Test continuous calibration mode functionality
+  - [ ] Validate continuous calibration in standalone tempest.py mode
+  - [ ] Test background continuous calibration in main.py 
+  - [ ] Verify Docker continuous mode (DAVIS_MODE=continuous)
+  - [ ] Test configurable intervals and adjustment rates
+  - [ ] Validate thread-safe calibration factor updates
+  - [ ] Test confidence-based calibration application
+  - [ ] Verify graceful handling of Tempest data unavailability
 
 ## Enhancements 🚀
 
