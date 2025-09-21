@@ -25,6 +25,12 @@
 - [x] Wind speed min/max tracking (lull and gust measurements)
 - [x] Tempest weather station calibration integration (UDP-based standalone utility)
 - [x] Remove vestigial Tempest web interface code and fix AttributeError issues
+- [x] **Full automatic calibration with integrated UDP listening and data collection**
+  - Integrated Tempest UDP broadcast listener directly into main.py
+  - Automatic Davis + Tempest reading collection and comparison
+  - Real-time calibration factor calculation and confidence assessment
+  - Automatic application of calibration factors when confidence meets threshold
+  - Comprehensive error handling and user guidance
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware

@@ -28,6 +28,11 @@ HAS_TEMPEST = True
 # Tempest UDP broadcast port
 UDP_PORT = 50222
 
+# Global Tempest data storage for auto-calibration
+tempest_data_lock = threading.Lock()
+latest_tempest_raw_by_type = {}
+latest_tempest_parsed_by_type = {}
+
 # ---------------- Firewall Management for Auto-Calibration ----------------
 class FirewallManager:
     """Manages iptables rules for UDP broadcast reception"""
@@ -201,6 +206,234 @@ class FirewallManager:
         # Test port accessibility
         return self.check_port_status()
 
+
+# ---------------- Tempest UDP Message Parsers for Auto-Calibration ----------------
+def c_to_f(c): return None if c is None else (c * 9/5) + 32
+def mps_to_kt(m): return None if m is None else m * 1.943844
+def hpa_to_inhg(h): return None if h is None else h * 0.0295299830714
+def mm_to_in(mm): return None if mm is None else mm / 25.4
+
+PRECIP_TYPES = {
+    0: "none",
+    1: "rain", 
+    2: "hail",
+    3: "snow",
+}
+
+def parse_obs_st(msg):
+    """Parse Tempest device observation messages"""
+    obs = msg.get("obs", [[]])[0] if msg.get("obs") else []
+    if not obs:
+        return {"type": "obs_st", "error": "empty obs"}
+
+    return {
+        "timestamp": obs[0],
+        "wind": {
+            "lull_mps": obs[1], "lull_kt": mps_to_kt(obs[1]),
+            "avg_mps": obs[2],  "avg_kt": mps_to_kt(obs[2]),
+            "gust_mps": obs[3], "gust_kt": mps_to_kt(obs[3]),
+            "direction_deg": obs[4],
+            "sample_interval_s": obs[5],
+        },
+        "pressure": {
+            "hpa": obs[6],
+            "inHg": hpa_to_inhg(obs[6]),
+        },
+        "temperature": {
+            "c": obs[7],
+            "f": c_to_f(obs[7]),
+        },
+        "humidity_percent": obs[8],
+        "light": {
+            "illuminance_lux": obs[9],
+            "uv_index": obs[10],
+            "solar_radiation_wm2": obs[11],
+        },
+        "rain": {
+            "since_report_mm": obs[12],
+            "since_report_in": mm_to_in(obs[12]),
+            "precipitation_type": PRECIP_TYPES.get(obs[13], "unknown"),
+            "local_day_mm": obs[18] if len(obs) > 18 else None,
+            "local_day_in": mm_to_in(obs[18]) if len(obs) > 18 else None,
+        },
+        "lightning": {
+            "avg_distance_km": obs[14],
+            "strike_count": obs[15],
+        },
+        "battery_v": obs[16],
+        "report_interval_min": obs[17],
+        "meta": {
+            "device_sn": msg.get("serial_number"),
+            "hub_sn": msg.get("hub_sn"),
+            "received_at": int(time.time()),
+        },
+    }
+
+def parse_rapid_wind(msg):
+    """Parse rapid wind messages for instant wind readings"""
+    ob = msg.get("ob", [])
+    if len(ob) < 3:
+        return {"type": "rapid_wind", "error": "bad ob"}
+    return {
+        "timestamp": ob[0],
+        "wind": {
+            "instant_mps": ob[1],
+            "instant_kt": mps_to_kt(ob[1]),
+            "direction_deg": ob[2],
+        },
+        "meta": {
+            "device_sn": msg.get("serial_number"),
+            "hub_sn": msg.get("hub_sn"),
+            "received_at": int(time.time()),
+        },
+    }
+
+def parse_hub_status(msg):
+    """Parse hub status messages"""
+    return {
+        "firmware": msg.get("firmware_revision"),
+        "uptime_s": msg.get("uptime"),
+        "rssi": msg.get("rssi"),
+        "timestamp": msg.get("time"),
+        "meta": {
+            "hub_sn": msg.get("serial_number"),
+            "received_at": int(time.time()),
+        },
+    }
+
+TEMPEST_PARSERS = {
+    "obs_st": parse_obs_st,
+    "rapid_wind": parse_rapid_wind,
+    "hub_status": parse_hub_status,
+}
+
+def get_current_tempest_wind():
+    """Get current wind data from latest Tempest readings"""
+    with tempest_data_lock:
+        # Try rapid_wind first (most recent), fallback to obs_st
+        if "rapid_wind" in latest_tempest_parsed_by_type:
+            data = latest_tempest_parsed_by_type["rapid_wind"]["data"]
+            if "error" not in data:
+                return {
+                    'wind_speed_knots': data["wind"]["instant_kt"],
+                    'wind_direction_deg': data["wind"]["direction_deg"],
+                    'timestamp': data["timestamp"],
+                    'source': 'rapid_wind'
+                }
+        
+        if "obs_st" in latest_tempest_parsed_by_type:
+            data = latest_tempest_parsed_by_type["obs_st"]["data"]
+            if "error" not in data:
+                return {
+                    'wind_speed_knots': data["wind"]["avg_kt"],
+                    'wind_direction_deg': data["wind"]["direction_deg"],
+                    'timestamp': data["timestamp"],
+                    'source': 'obs_st'
+                }
+    
+    return None
+
+def calculate_calibration_factors(davis_readings, tempest_readings):
+    """Calculate calibration factors based on paired readings"""
+    if not davis_readings or not tempest_readings or len(davis_readings) != len(tempest_readings):
+        return None
+    
+    speed_ratios = []
+    direction_diffs = []
+    
+    for davis, tempest in zip(davis_readings, tempest_readings):
+        # Speed calibration (only use non-zero wind speeds)
+        if davis['wind_speed_knots'] > 0.1 and tempest['wind_speed_knots'] > 0.1:
+            ratio = tempest['wind_speed_knots'] / davis['wind_speed_knots']
+            speed_ratios.append(ratio)
+        
+        # Direction offset calculation (handle wrap-around)
+        davis_dir = davis['wind_direction_deg']
+        tempest_dir = tempest['wind_direction_deg']
+        
+        diff = tempest_dir - davis_dir
+        if diff > 180:
+            diff -= 360
+        elif diff < -180:
+            diff += 360
+        direction_diffs.append(diff)
+    
+    if not speed_ratios:
+        return None
+    
+    # Calculate averages
+    avg_speed_ratio = sum(speed_ratios) / len(speed_ratios)
+    avg_direction_offset = sum(direction_diffs) / len(direction_diffs)
+    
+    # Calculate confidence (inverse of standard deviation)
+    if len(speed_ratios) > 1:
+        speed_std = (sum((r - avg_speed_ratio) ** 2 for r in speed_ratios) / len(speed_ratios)) ** 0.5
+        speed_confidence = 1.0 / (1.0 + speed_std)
+    else:
+        speed_confidence = 0.5
+    
+    if len(direction_diffs) > 1:
+        dir_std = (sum((d - avg_direction_offset) ** 2 for d in direction_diffs) / len(direction_diffs)) ** 0.5
+        dir_confidence = 1.0 / (1.0 + dir_std / 10.0)
+    else:
+        dir_confidence = 0.5
+    
+    return {
+        'speed_calibration_factor': avg_speed_ratio,
+        'direction_offset': avg_direction_offset,
+        'speed_confidence': speed_confidence,
+        'direction_confidence': dir_confidence,
+        'sample_count': len(speed_ratios),
+        'speed_ratios': speed_ratios,
+        'direction_diffs': direction_diffs
+    }
+
+def tempest_udp_listener():
+    """UDP listener thread for Tempest broadcasts"""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("0.0.0.0", UDP_PORT))
+        
+        while True:
+            try:
+                data, addr = sock.recvfrom(65535)
+                msg = json.loads(data.decode("utf-8"))
+                
+                msg_type = msg.get("type", "unknown")
+                
+                # Store the raw message by type
+                with tempest_data_lock:
+                    latest_tempest_raw_by_type[msg_type] = msg
+                    
+                    # If we have a parser for this type, also store parsed
+                    parser = TEMPEST_PARSERS.get(msg_type)
+                    if parser:
+                        try:
+                            parsed_data = parser(msg)
+                            latest_tempest_parsed_by_type[msg_type] = {
+                                "type": msg_type,
+                                "data": parsed_data
+                            }
+                        except Exception as e:
+                            # Skip parsing errors
+                            pass
+                    else:
+                        # If no parser, remove any stale parsed entry
+                        if msg_type in latest_tempest_parsed_by_type:
+                            del latest_tempest_parsed_by_type[msg_type]
+                            
+            except json.JSONDecodeError:
+                # Skip non-JSON packets
+                continue
+            except Exception as e:
+                # Log UDP errors but continue listening
+                logging.getLogger(__name__).debug(f"UDP listener error: {e}")
+                continue
+                
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Failed to start Tempest UDP listener: {e}")
+        
 
 # Wind speed conversion constants
 MPS_TO_KNOTS = 1.94384  # meters per second to knots conversion factor
@@ -1021,22 +1254,143 @@ def run_auto_calibration(args, logger):
         logger.info("Firewall setup skipped (--no-firewall specified)")
     
     logger.info("")
-    logger.warning("⚠️  Full auto-calibration feature is not yet implemented")
-    logger.info("📝 The --auto-calibrate flag currently:")
-    logger.info("   ✅ Sets up firewall rules for UDP reception") 
-    logger.info("   ✅ Prepares environment for Tempest calibration")
-    logger.info("   📋 Does not yet collect and compare readings automatically")
-    logger.info("")
-    logger.info("💡 For full calibration functionality, use the standalone utility:")
-    logger.info("   python3 tempest.py --calibrate  # Interactive console mode")
-    logger.info("   python3 tempest.py             # Web interface at :8080/calibration")
-    logger.info("")
-    logger.info("🚀 Future update will enable full automatic calibration")
-    logger.info("   that collects Davis readings and applies calibration factors")
     
-    # Firewall cleanup will happen automatically via atexit handler
+    # Start UDP listener thread
+    logger.info("🌐 Starting Tempest UDP listener...")
+    udp_thread = threading.Thread(target=tempest_udp_listener, daemon=True)
+    udp_thread.start()
     
-    return None, None
+    # Wait for initial Tempest data
+    logger.info("⏳ Waiting for Tempest UDP broadcasts...")
+    tempest_found = False
+    wait_start = time.time()
+    wait_timeout = 30  # 30 seconds to detect Tempest
+    
+    while time.time() - wait_start < wait_timeout:
+        tempest_wind = get_current_tempest_wind()
+        if tempest_wind:
+            tempest_found = True
+            logger.info(f"✅ Tempest detected! Current reading: {tempest_wind['wind_speed_knots']:.1f} knots, {tempest_wind['wind_direction_deg']:.0f}° ({tempest_wind['source']})")
+            break
+        time.sleep(1)
+    
+    if not tempest_found:
+        logger.warning("⚠️  No Tempest data received within 30 seconds")
+        logger.info("💡 Make sure:")
+        logger.info("   - Tempest weather station is powered on and broadcasting")
+        logger.info("   - You're on the same network as the Tempest station")
+        logger.info("   - Firewall allows UDP traffic on port 50222")
+        logger.info("   - Try running: python3 tempest.py --test-connection")
+        return None, None
+    
+    # Initialize wind sensor reader for data collection
+    logger.info("🌪️  Initializing Davis wind sensor for calibration data collection...")
+    wind_reader = WindSensorReader(
+        port=args.port,
+        baudrate=args.baudrate,
+        timeout=args.timeout,
+        calibration_factor=1.0,  # Use uncalibrated values for comparison
+        direction_offset=0.0,
+        direction_scale=args.direction_scale
+    )
+    
+    # Collect calibration data
+    davis_readings = []
+    tempest_readings = []
+    samples_collected = 0
+    start_time = time.time()
+    
+    logger.info(f"📊 Collecting {args.calibration_samples} comparison samples...")
+    logger.info(f"⏱️  Taking one sample every {args.calibration_interval} seconds")
+    logger.info(f"⏰ Maximum calibration time: {args.calibration_timeout} seconds")
+    logger.info("")
+    
+    try:
+        with wind_reader.serial_connection() as ser:
+            while samples_collected < args.calibration_samples:
+                # Check timeout
+                if time.time() - start_time > args.calibration_timeout:
+                    logger.error(f"❌ Calibration timeout after {args.calibration_timeout} seconds")
+                    break
+                
+                # Get Davis reading
+                logger.debug("📡 Reading data from Davis sensor...")
+                line = ser.readline().decode('utf-8', errors='ignore')
+                davis_data = wind_reader.parse_wind_data(line.strip()) if line.strip() else None
+                
+                if davis_data:
+                    # Get corresponding Tempest reading
+                    tempest_data = get_current_tempest_wind()
+                    
+                    if tempest_data:
+                        davis_readings.append(davis_data)
+                        tempest_readings.append(tempest_data)
+                        samples_collected += 1
+                        
+                        logger.info(f"📝 Sample {samples_collected}/{args.calibration_samples}: "
+                                   f"Davis: {davis_data['wind_speed_knots']:.2f} knots, {davis_data['wind_direction_deg']:.1f}° | "
+                                   f"Tempest: {tempest_data['wind_speed_knots']:.2f} knots, {tempest_data['wind_direction_deg']:.1f}°")
+                        
+                        # Wait before next sample
+                        if samples_collected < args.calibration_samples:
+                            time.sleep(args.calibration_interval)
+                    else:
+                        logger.debug("⚠️  No Tempest data available, retrying...")
+                        time.sleep(1)
+                else:
+                    logger.debug("⚠️  Invalid Davis reading, retrying...")
+    
+    except Exception as e:
+        logger.error(f"❌ Error during data collection: {e}")
+        return None, None
+    
+    # Calculate calibration factors
+    if samples_collected < 3:
+        logger.warning(f"⚠️  Insufficient samples collected ({samples_collected}), need at least 3 for reliable calibration")
+        return None, None
+    
+    logger.info("")
+    logger.info(f"🧮 Calculating calibration factors from {samples_collected} samples...")
+    
+    calibration_result = calculate_calibration_factors(davis_readings, tempest_readings)
+    
+    if not calibration_result:
+        logger.error("❌ Could not calculate calibration factors")
+        return None, None
+    
+    # Check calibration confidence
+    speed_confidence = calibration_result['speed_confidence']
+    direction_confidence = calibration_result['direction_confidence']
+    min_confidence = args.min_calibration_confidence
+    
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("🎯 AUTOMATIC TEMPEST CALIBRATION RESULTS")
+    logger.info("=" * 60)
+    logger.info(f"Speed calibration factor: {calibration_result['speed_calibration_factor']:.4f}")
+    logger.info(f"Direction offset: {calibration_result['direction_offset']:.2f}°")
+    logger.info(f"Speed confidence: {speed_confidence:.3f}")
+    logger.info(f"Direction confidence: {direction_confidence:.3f}")
+    logger.info(f"Sample count: {calibration_result['sample_count']}")
+    logger.info("=" * 60)
+    
+    # Check if calibration meets confidence requirements
+    if speed_confidence >= min_confidence and direction_confidence >= min_confidence:
+        logger.info("✅ Calibration confidence meets requirements - applying automatically!")
+        logger.info(f"📈 Applied speed factor: {calibration_result['speed_calibration_factor']:.4f}")
+        logger.info(f"🧭 Applied direction offset: {calibration_result['direction_offset']:.2f}°")
+        return calibration_result['speed_calibration_factor'], calibration_result['direction_offset']
+    else:
+        logger.warning(f"⚠️  Calibration confidence below threshold ({min_confidence:.2f})")
+        logger.info("💡 Recommendations:")
+        if speed_confidence < min_confidence:
+            logger.info(f"   - Speed confidence too low ({speed_confidence:.3f}): try with more steady wind conditions")
+        if direction_confidence < min_confidence:
+            logger.info(f"   - Direction confidence too low ({direction_confidence:.3f}): check wind vane alignment")
+        logger.info("   - Use --min-calibration-confidence to adjust threshold")
+        logger.info("   - Manually specify calibration: --calibration-factor X.XXX --direction-offset Y.Y")
+        
+        return None, None
 
 
 

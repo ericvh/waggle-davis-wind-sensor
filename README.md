@@ -309,30 +309,43 @@ sudo iptables -I INPUT -p udp --dport 50222 -j ACCEPT -m comment --comment tempe
 The Davis plugin can now run Tempest calibration automatically at startup using the `--auto-calibrate` flag:
 
 #### How It Works
-1. **Startup Calibration**: Plugin checks for local Tempest UDP broadcasts
-2. **Firewall Setup**: Automatically configures iptables rules if needed
-3. **Guidance**: Provides instructions for using the standalone calibration utility
-4. **Fallback**: Continues with manual calibration values if auto-calibration unavailable
+1. **Firewall Setup**: Automatically configures iptables rules for UDP reception
+2. **Tempest Detection**: Starts UDP listener and waits for Tempest broadcasts (30s timeout)
+3. **Data Collection**: Collects paired Davis + Tempest readings over specified interval
+4. **Calibration Calculation**: Computes speed factor and direction offset with confidence metrics
+5. **Automatic Application**: Applies calibration factors if confidence meets threshold
+6. **Fallback**: Uses manual values if auto-calibration fails or confidence too low
 
-#### Current Implementation
-The `--auto-calibrate` feature currently:
-- Sets up UDP listener for Tempest broadcasts
-- Configures firewall rules automatically
-- **Provides guidance** to use the standalone calibration utility
-- Falls back to manual calibration values
+#### Full Implementation
+The `--auto-calibrate` feature provides **complete automatic calibration**:
+- ✅ **Integrated UDP listener** for Tempest broadcasts
+- ✅ **Automatic firewall configuration** with root/sudo detection
+- ✅ **Real-time data collection** from both Davis sensor and Tempest station
+- ✅ **Calibration factor calculation** with confidence assessment
+- ✅ **Automatic application** when confidence ≥ threshold (default: 0.7)
+- ✅ **Comprehensive error handling** and user guidance
 
-**For full calibration functionality, use the standalone utility:**
+**Usage:**
+```bash
+# Full automatic calibration with defaults (10 samples, 5s intervals)
+python3 main.py --auto-calibrate
+
+# Custom parameters
+python3 main.py --auto-calibrate \
+  --calibration-samples 15 \
+  --calibration-interval 3 \
+  --min-calibration-confidence 0.8
+
+# Skip firewall setup
+python3 main.py --auto-calibrate --no-firewall
+```
+
+#### Standalone Utility
+For manual calibration or when auto-calibration fails:
 ```bash
 python3 tempest.py --calibrate  # Interactive mode
 python3 tempest.py             # Web interface at :8080/calibration
 ```
-
-#### Future Enhancement
-Full automatic calibration will be implemented to:
-- Collect Davis readings during startup
-- Compare with simultaneous Tempest data
-- Automatically apply calculated calibration factors
-- Require no manual intervention
 
 ### Troubleshooting
 
