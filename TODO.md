@@ -110,6 +110,15 @@
   - Uses 10-degree direction bins with up to 100 samples per bin for statistical reliability
   - Provides foundation for future non-linear direction calibration improvements
   - Thread-safe data collection and persistent JSON storage
+- [x] **Extract firewall management code into standalone Docker container**
+  - Created firewall-opener subdirectory with standalone firewall management functionality
+  - Extracted FirewallManager class from main.py into independent firewall_manager.py script
+  - Built Docker container with iptables support for UDP port management
+  - Added comprehensive command-line interface with setup, cleanup, and status actions
+  - Created docker-compose.yml for easy deployment and testing
+  - Added README.md with usage examples and troubleshooting guide
+  - Container can be used as sidecar service or standalone firewall management tool
+  - Supports privileged mode and capability-based security for different deployment scenarios
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
