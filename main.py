@@ -2034,7 +2034,7 @@ def main():
                     logger.info("Connected to serial port, reading data continuously...")
                     latest_data["status"] = "running"
                     
-                    while True:
+                    while not done:
                         try:
                             # Block waiting for a line of data
                             line = ser.readline().decode('utf-8', errors='ignore')
