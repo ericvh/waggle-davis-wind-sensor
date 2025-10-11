@@ -1,4 +1,4 @@
-name: "waggle-davis6410"
+name: "waggle-davis-wind-sensor"
 version: "0.1.0"
 description: "Waggle plugin to get data from a Davis 6410 Wind Sensor"
 keywords: ""
