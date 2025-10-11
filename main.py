@@ -2064,33 +2064,39 @@ def main():
 
                                     
                                     # Immediate debug measurements - Davis-specific data (for web interface)
+                                    # Published to node scope (local debugging data)
                                     timestamp = datetime.now(timezone.utc)
                                     plugin.publish("davis.wind.rps", wind_data['rotations_per_second'], 
                                                  timestamp=timestamp,
+                                                 scope="node",
                                                  meta={"sensor": "davis-anemometer-6410", 
                                                        "units": "rps", 
                                                        "description": "Wind sensor rotations per second",
                                                        "missing": -9999.0})
                                     plugin.publish("davis.wind.rpm.tops", wind_data['rpm_tops'], 
                                                  timestamp=timestamp,
+                                                 scope="node",
                                                  meta={"sensor": "davis-anemometer-6410",
                                                        "units": "rpm", 
                                                        "description": "Debounced RPM count",
                                                        "missing": -9999.0})
                                     plugin.publish("davis.wind.rpm.raw", wind_data['rpm_raw'], 
                                                  timestamp=timestamp,
+                                                 scope="node",
                                                  meta={"sensor": "davis-anemometer-6410",
                                                        "units": "rpm", 
                                                        "description": "Raw RPM count",
                                                        "missing": -9999.0})
                                     plugin.publish("davis.wind.pot.value", wind_data['pot_value'], 
                                                  timestamp=timestamp,
+                                                 scope="node",
                                                  meta={"sensor": "davis-anemometer-6410",
                                                        "units": "counts", 
                                                        "description": "Raw potentiometer value for direction",
                                                        "missing": -9999})
                                     plugin.publish("davis.wind.iteration", wind_data['iteration'], 
                                                  timestamp=timestamp,
+                                                 scope="node",
                                                  meta={"sensor": "davis-anemometer-6410",
                                                        "units": "count", 
                                                        "description": "Arduino iteration counter",
@@ -2099,6 +2105,7 @@ def main():
                                     # Publish immediate sensor status as OK
                                     plugin.publish("davis.wind.sensor_status", 1, 
                                                  timestamp=timestamp,
+                                                 scope="node",
                                                  meta={"sensor": "davis-anemometer-6410",
                                                        "description": "Davis wind sensor status (0=error, 1=ok)",
                                                        "missing": -1})
@@ -2108,9 +2115,11 @@ def main():
                                         averaged_data = data_collector.get_averaged_data()
                                         if averaged_data:
                                             # Publish averaged environmental measurements
+                                            # Published to beehive scope (environmental data for analysis)
                                             env_timestamp = datetime.now(timezone.utc)
                                             plugin.publish("env.wind.speed", averaged_data['avg_wind_speed_knots'], 
                                                          timestamp=env_timestamp,
+                                                         scope="beehive",
                                                          meta={"sensor": "davis-anemometer-6410",
                                                                "units": "knots", 
                                                                "description": "Average wind speed in knots", 
@@ -2119,6 +2128,7 @@ def main():
                                                                "missing": -9999.0})
                                             plugin.publish("env.wind.direction", averaged_data['avg_wind_direction_deg'], 
                                                          timestamp=env_timestamp,
+                                                         scope="beehive",
                                                          meta={"sensor": "davis-anemometer-6410",
                                                                "units": "degrees", 
                                                                "description": "Average wind direction in degrees", 
@@ -2127,6 +2137,7 @@ def main():
                                                                "missing": -9999.0})
                                             plugin.publish("env.wind.speed.mps", averaged_data['avg_wind_speed_mps'], 
                                                          timestamp=env_timestamp,
+                                                         scope="beehive",
                                                          meta={"sensor": "davis-anemometer-6410",
                                                                "units": "m/s", 
                                                                "description": "Average wind speed in meters per second", 
@@ -2137,6 +2148,7 @@ def main():
                                             # Wind speed min/max (lull and gust)
                                             plugin.publish("env.wind.speed.min", averaged_data['min_wind_speed_knots'], 
                                                          timestamp=env_timestamp,
+                                                         scope="beehive",
                                                          meta={"sensor": "davis-anemometer-6410",
                                                                "units": "knots", 
                                                                "description": "Minimum wind speed (lull) during interval", 
@@ -2145,6 +2157,7 @@ def main():
                                                                "missing": -9999.0})
                                             plugin.publish("env.wind.speed.max", averaged_data['max_wind_speed_knots'], 
                                                          timestamp=env_timestamp,
+                                                         scope="beehive",
                                                          meta={"sensor": "davis-anemometer-6410",
                                                                "units": "knots", 
                                                                "description": "Maximum wind speed (gust) during interval", 
@@ -2153,6 +2166,7 @@ def main():
                                                                "missing": -9999.0})
                                             plugin.publish("env.wind.speed.min.mps", averaged_data['min_wind_speed_mps'], 
                                                          timestamp=env_timestamp,
+                                                         scope="beehive",
                                                          meta={"sensor": "davis-anemometer-6410",
                                                                "units": "m/s", 
                                                                "description": "Minimum wind speed (lull) in m/s during interval", 
@@ -2161,6 +2175,7 @@ def main():
                                                                "missing": -9999.0})
                                             plugin.publish("env.wind.speed.max.mps", averaged_data['max_wind_speed_mps'], 
                                                          timestamp=env_timestamp,
+                                                         scope="beehive",
                                                          meta={"sensor": "davis-anemometer-6410",
                                                                "units": "m/s", 
                                                                "description": "Maximum wind speed (gust) in m/s during interval", 
@@ -2171,6 +2186,7 @@ def main():
                                             # Additional averaged metrics
                                             plugin.publish("env.wind.consistency", averaged_data['wind_consistency'], 
                                                          timestamp=env_timestamp,
+                                                         scope="beehive",
                                                          meta={"sensor": "davis-anemometer-6410",
                                                                "units": "ratio", 
                                                                "description": "Wind direction consistency (1.0=steady, 0.0=highly variable)", 
@@ -2235,6 +2251,7 @@ def main():
                 error_timestamp = datetime.now(timezone.utc)
                 plugin.publish("davis.wind.sensor_status", 0, 
                              timestamp=error_timestamp,
+                             scope="node",
                              meta={"sensor": "davis-anemometer-6410",
                                    "description": "Davis wind sensor status (0=error, 1=ok)",
                                    "missing": -1})
