@@ -27,29 +27,48 @@ A Waggle plugin that reads Davis wind sensor data from Arduino via USB serial po
 
 ## Data Outputs
 
-The plugin publishes the following measurements:
+The plugin publishes measurements with comprehensive metadata including scopes, timestamps, sensor identification, and missing value indicators. This aligns with standard Waggle plugin patterns for better data organization and quality.
+
+### Publishing Scopes
+
+- **Beehive Scope**: Environmental data sent to central Beehive server for analysis and archival
+- **Node Scope**: Debug and diagnostic data kept local to the node for troubleshooting
 
 ### Primary Environmental Data (WXT-compatible)
-| Measurement | Units | Description |
-|-------------|-------|-------------|
-| `env.wind.speed` | knots | Averaged wind speed in knots |
-| `env.wind.direction` | degrees | Vector-averaged wind direction (0-360°) |
-| `env.wind.speed.mps` | m/s | Averaged wind speed in meters per second |
-| `env.wind.speed.min` | knots | Minimum wind speed (lull) during interval |
-| `env.wind.speed.max` | knots | Maximum wind speed (gust) during interval |
-| `env.wind.speed.min.mps` | m/s | Minimum wind speed (lull) in m/s during interval |
-| `env.wind.speed.max.mps` | m/s | Maximum wind speed (gust) in m/s during interval |
-| `env.wind.consistency` | ratio | Wind direction consistency (1.0=steady, 0.0=highly variable) |
+**Scope: `beehive`** - Published to central Beehive for scientific analysis
+
+| Measurement | Units | Sensor | Description | Missing Value |
+|-------------|-------|--------|-------------|---------------|
+| `env.wind.speed` | knots | davis-anemometer | Averaged wind speed in knots | -9999.0 |
+| `env.wind.direction` | degrees | davis-wind-vane | Vector-averaged wind direction (0-360°) | -9999.0 |
+| `env.wind.speed.mps` | m/s | davis-anemometer | Averaged wind speed in meters per second | -9999.0 |
+| `env.wind.speed.min` | knots | davis-anemometer | Minimum wind speed (lull) during interval | -9999.0 |
+| `env.wind.speed.max` | knots | davis-anemometer | Maximum wind speed (gust) during interval | -9999.0 |
+| `env.wind.speed.min.mps` | m/s | davis-anemometer | Minimum wind speed (lull) in m/s during interval | -9999.0 |
+| `env.wind.speed.max.mps` | m/s | davis-anemometer | Maximum wind speed (gust) in m/s during interval | -9999.0 |
+| `env.wind.consistency` | ratio | davis-wind-vane | Wind direction consistency (1.0=steady, 0.0=highly variable) | -9999.0 |
+
+All environmental measurements include UTC timestamps and metadata fields:
+- `sensor`: Physical sensor identifier
+- `units`: Measurement units
+- `description`: Human-readable description
+- `interval_seconds`: Averaging interval (for averaged data)
+- `sample_count`: Number of samples in average
+- `missing`: Missing value indicator
 
 ### Davis-Specific Debug Data
-| Measurement | Units | Description |
-|-------------|-------|-------------|
-| `davis.wind.rps` | rps | Sensor rotations per second |
-| `davis.wind.rpm.tops` | rpm | Debounced RPM count |
-| `davis.wind.rpm.raw` | rpm | Raw RPM count |
-| `davis.wind.pot.value` | counts | Raw potentiometer value (0-1024) |
-| `davis.wind.iteration` | count | Arduino iteration counter |
-| `davis.wind.sensor_status` | status | Sensor status (0=error, 1=ok) |
+**Scope: `node`** - Published locally for debugging and troubleshooting
+
+| Measurement | Units | Sensor | Description | Missing Value |
+|-------------|-------|--------|-------------|---------------|
+| `davis.wind.rps` | rps | davis-anemometer | Sensor rotations per second | -9999.0 |
+| `davis.wind.rpm.tops` | rpm | davis-anemometer | Debounced RPM count | -9999.0 |
+| `davis.wind.rpm.raw` | rpm | davis-anemometer | Raw RPM count | -9999.0 |
+| `davis.wind.pot.value` | counts | davis-wind-vane | Raw potentiometer value (0-1024) | -9999 |
+| `davis.wind.iteration` | count | davis-anemometer | Arduino iteration counter | -9999 |
+| `davis.wind.sensor_status` | status | davis-anemometer | Sensor status (0=error, 1=ok) | -1 |
+
+Debug measurements include UTC timestamps and sensor identification for diagnostic purposes.
 
 
 ## Expected Serial Data Format

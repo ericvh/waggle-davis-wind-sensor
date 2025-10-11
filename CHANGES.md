@@ -2,6 +2,62 @@
 
 This file documents all implementation details and changes to the project.
 
+## 2025-10-11 - Enhanced Publishing with Scope, Timestamps, and Sensor Metadata
+
+### Changes
+- **Updated all plugin.publish() calls to include comprehensive Waggle metadata**
+  - Aligned with waggle-wxt536 plugin's publishing methodology
+  - Added scope-based publishing for proper data organization
+  - Added UTC timestamps to all published measurements
+  - Added sensor identification in metadata
+  - Added missing value indicators for data quality
+
+### Publishing Scopes
+- **Node Scope** (`scope="node"`): Debug and diagnostic data
+  - `davis.wind.rps` - Rotations per second
+  - `davis.wind.rpm.tops` - Debounced RPM count
+  - `davis.wind.rpm.raw` - Raw RPM count
+  - `davis.wind.pot.value` - Raw potentiometer value
+  - `davis.wind.iteration` - Arduino iteration counter
+  - `davis.wind.sensor_status` - Sensor status (0=error, 1=ok)
+  
+- **Beehive Scope** (`scope="beehive"`): Environmental data for analysis
+  - `env.wind.speed` - Average wind speed in knots
+  - `env.wind.direction` - Average wind direction in degrees
+  - `env.wind.speed.mps` - Average wind speed in m/s
+  - `env.wind.speed.min` - Minimum wind speed (lull) in knots
+  - `env.wind.speed.max` - Maximum wind speed (gust) in knots
+  - `env.wind.speed.min.mps` - Minimum wind speed in m/s
+  - `env.wind.speed.max.mps` - Maximum wind speed in m/s
+  - `env.wind.consistency` - Wind direction consistency metric
+
+### Metadata Fields
+Each published measurement now includes:
+- `sensor`: Identifier for the physical sensor (e.g., "davis-anemometer", "davis-wind-vane")
+- `units`: Measurement units
+- `description`: Human-readable description
+- `missing`: Missing value indicator (-9999.0 for floats, -9999 for integers, -1 for status)
+- `timestamp`: UTC timestamp of measurement
+- Additional fields for averaged data: `interval_seconds`, `sample_count`
+
+### Benefits
+- **Better Data Organization**: Scope-based publishing separates debug data (node) from scientific data (beehive)
+- **Improved Compatibility**: Aligns with standard Waggle plugin patterns used by other weather sensors
+- **Data Quality**: Missing value indicators enable proper handling of invalid/unavailable data
+- **Time Precision**: UTC timestamps ensure accurate temporal context for measurements
+- **Sensor Traceability**: Explicit sensor identification in metadata supports multi-sensor deployments
+
+### Files Modified
+- `main.py` - Updated all plugin.publish() calls with new metadata structure
+- `main.py` - Added missing `import sys` statement (bug fix)
+- `sage-generated.yaml` - Updated output definitions with scope and missing_value fields
+
+### Technical Implementation
+- UTC timestamps generated using `datetime.now(timezone.utc)`
+- Separate timestamps for debug (node scope) and environmental (beehive scope) data
+- Missing value convention: -9999.0 for float measurements, -9999 for integers, -1 for status codes
+- Sensor identifiers: "davis-anemometer" for speed data, "davis-wind-vane" for direction data
+
 ## 2025-10-11 - Environment Variable Documentation
 
 ### Changes

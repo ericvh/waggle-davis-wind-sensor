@@ -4,6 +4,7 @@ import argparse
 import logging
 import math
 import time
+import sys
 import serial
 import re
 import json
@@ -458,174 +459,209 @@ latest_data = {
 }
 
 
+def get_env_or_default(env_var, default, convert_type=None):
+    """Get value from environment variable or return default
+    
+    Args:
+        env_var: Environment variable name
+        default: Default value if env var not set
+        convert_type: Optional type conversion function (int, float, bool)
+    
+    Returns:
+        Value from environment or default
+    """
+    value = os.getenv(env_var)
+    if value is None:
+        return default
+    
+    if convert_type is None:
+        return value
+    elif convert_type == bool:
+        # Handle boolean environment variables
+        return value.lower() in ('true', '1', 'yes', 'on')
+    else:
+        return convert_type(value)
+
+
 def parse_args():
-    """Parse command line arguments"""
+    """Parse command line arguments
+    
+    All arguments can also be set via environment variables with DAVIS_ prefix.
+    For example: --port can be set via DAVIS_PORT environment variable.
+    Command line arguments take precedence over environment variables.
+    """
     parser = argparse.ArgumentParser(
         description="Wind sensor plugin for Waggle - reads wind data from USB serial port"
     )
     parser.add_argument(
         "--port", 
-        default="/host/dev/serial/by-id/usb-Seeed_Seeeduino_XIAO_C9C906D45030524E572E3120FF15183E-if00", 
-        help="Serial port device (default: /host/dev/serial/by-id/usb-Seeed_Seeeduino_XIAO_C9C906D45030524E572E3120FF15183E-if00)"
+        default=get_env_or_default("DAVIS_PORT", "/host/dev/serial/by-id/usb-Seeed_Seeeduino_XIAO_C9C906D45030524E572E3120FF15183E-if00"), 
+        help="Serial port device (env: DAVIS_PORT)"
     )
     parser.add_argument(
         "--baudrate", 
         type=int, 
-        default=115200, 
-        help="Serial port baud rate (default: 115200)"
+        default=get_env_or_default("DAVIS_BAUDRATE", 115200, int), 
+        help="Serial port baud rate (default: 115200, env: DAVIS_BAUDRATE)"
     )
     parser.add_argument(
         "--timeout", 
         type=float, 
-        default=30.0, 
-        help="Serial port timeout in seconds (default: 30.0)"
+        default=get_env_or_default("DAVIS_TIMEOUT", 30.0, float), 
+        help="Serial port timeout in seconds (default: 30.0, env: DAVIS_TIMEOUT)"
     )
 
     parser.add_argument(
         "--debug", 
         action="store_true", 
-        help="Enable debug output"
+        default=get_env_or_default("DAVIS_DEBUG", False, bool),
+        help="Enable debug output (env: DAVIS_DEBUG)"
     )
     parser.add_argument(
         "--calibration-factor", 
         type=float, 
-        default=9.0, 
-        help="Wind speed calibration factor (default: 9.0)"
+        default=get_env_or_default("DAVIS_CALIBRATION_FACTOR", 9.0, float), 
+        help="Wind speed calibration factor (default: 9.0, env: DAVIS_CALIBRATION_FACTOR)"
     )
     parser.add_argument(
         "--direction-offset", 
         type=float, 
-        default=-94.43, 
-        help="Wind direction offset in degrees (default: -94.43)"
+        default=get_env_or_default("DAVIS_DIRECTION_OFFSET", -94.43, float), 
+        help="Wind direction offset in degrees (default: -94.43, env: DAVIS_DIRECTION_OFFSET)"
     )
     parser.add_argument(
         "--direction-scale", 
         type=float, 
-        default=1.0, 
-        help="Wind direction scaling factor (default: 1.0)"
+        default=get_env_or_default("DAVIS_DIRECTION_SCALE", 1.0, float), 
+        help="Wind direction scaling factor (default: 1.0, env: DAVIS_DIRECTION_SCALE)"
     )
     parser.add_argument(
         "--web-server", 
         action="store_true", 
-        help="Enable mini web server for monitoring"
+        default=get_env_or_default("DAVIS_WEB_SERVER", False, bool),
+        help="Enable mini web server for monitoring (env: DAVIS_WEB_SERVER)"
     )
     parser.add_argument(
         "--web-port", 
         type=int, 
-        default=8080, 
-        help="Web server port (default: 8080)"
+        default=get_env_or_default("DAVIS_WEB_PORT", 8080, int), 
+        help="Web server port (default: 8080, env: DAVIS_WEB_PORT)"
     )
     parser.add_argument(
         "--reporting-interval", 
         type=int, 
-        default=60, 
-        help="MQTT reporting interval in seconds for averaged data (default: 60)"
+        default=get_env_or_default("DAVIS_REPORTING_INTERVAL", 60, int), 
+        help="MQTT reporting interval in seconds for averaged data (default: 60, env: DAVIS_REPORTING_INTERVAL)"
     )
     # Auto-calibration with local Tempest UDP broadcasts
     parser.add_argument(
         "--auto-calibrate", 
         action="store_true", 
-        help="Run automatic Tempest calibration at startup using UDP broadcasts"
+        default=get_env_or_default("DAVIS_AUTO_CALIBRATE", False, bool),
+        help="Run automatic Tempest calibration at startup using UDP broadcasts (env: DAVIS_AUTO_CALIBRATE)"
     )
     parser.add_argument(
         "--calibration-samples", 
         type=int, 
-        default=10, 
-        help="Number of samples for auto-calibration (default: 10)"
+        default=get_env_or_default("DAVIS_CALIBRATION_SAMPLES", 10, int), 
+        help="Number of samples for auto-calibration (default: 10, env: DAVIS_CALIBRATION_SAMPLES)"
     )
     parser.add_argument(
         "--calibration-interval", 
         type=int, 
-        default=5, 
-        help="Seconds between calibration samples (default: 5)"
+        default=get_env_or_default("DAVIS_CALIBRATION_INTERVAL", 5, int), 
+        help="Seconds between calibration samples (default: 5, env: DAVIS_CALIBRATION_INTERVAL)"
     )
     parser.add_argument(
         "--calibration-timeout", 
         type=int, 
-        default=300, 
-        help="Maximum time for calibration in seconds (default: 300)"
+        default=get_env_or_default("DAVIS_CALIBRATION_TIMEOUT", 300, int), 
+        help="Maximum time for calibration in seconds (default: 300, env: DAVIS_CALIBRATION_TIMEOUT)"
     )
     parser.add_argument(
         "--min-calibration-confidence", 
         type=float, 
-        default=0.7, 
-        help="Minimum confidence required for auto-calibration (default: 0.7)"
+        default=get_env_or_default("DAVIS_MIN_CALIBRATION_CONFIDENCE", 0.7, float), 
+        help="Minimum confidence required for auto-calibration (default: 0.7, env: DAVIS_MIN_CALIBRATION_CONFIDENCE)"
     )
     parser.add_argument(
         "--no-firewall", 
         action="store_true", 
-        help="Skip automatic firewall setup for calibration"
+        default=get_env_or_default("DAVIS_NO_FIREWALL", False, bool),
+        help="Skip automatic firewall setup for calibration (env: DAVIS_NO_FIREWALL)"
     )
     # Continuous calibration mode
     parser.add_argument(
         "--continuous-calibration", 
         action="store_true", 
-        help="Enable continuous calibration mode - automatically adjusts calibration every 15 minutes"
+        default=get_env_or_default("DAVIS_CONTINUOUS_CALIBRATION", False, bool),
+        help="Enable continuous calibration mode - automatically adjusts calibration every 15 minutes (env: DAVIS_CONTINUOUS_CALIBRATION)"
     ) 
     parser.add_argument(
         "--continuous-interval", 
         type=int, 
-        default=900,  # 15 minutes in seconds
-        help="Interval between continuous calibration adjustments in seconds (default: 900 = 15 minutes)"
+        default=get_env_or_default("DAVIS_CONTINUOUS_INTERVAL", 900, int),  # 15 minutes in seconds
+        help="Interval between continuous calibration adjustments in seconds (default: 900 = 15 minutes, env: DAVIS_CONTINUOUS_INTERVAL)"
     )
     parser.add_argument(
         "--continuous-samples", 
         type=int, 
-        default=20,
-        help="Number of samples to collect for each continuous calibration calculation (default: 20)"
+        default=get_env_or_default("DAVIS_CONTINUOUS_SAMPLES", 20, int),
+        help="Number of samples to collect for each continuous calibration calculation (default: 20, env: DAVIS_CONTINUOUS_SAMPLES)"
     )
     parser.add_argument(
         "--continuous-sample-interval", 
         type=int, 
-        default=5,
-        help="Seconds between continuous calibration samples (default: 5)"
+        default=get_env_or_default("DAVIS_CONTINUOUS_SAMPLE_INTERVAL", 5, int),
+        help="Seconds between continuous calibration samples (default: 5, env: DAVIS_CONTINUOUS_SAMPLE_INTERVAL)"
     )
     parser.add_argument(
         "--continuous-confidence-threshold", 
         type=float, 
-        default=0.5,
-        help="Minimum speed confidence required for continuous calibration adjustments (default: 0.5)"
+        default=get_env_or_default("DAVIS_CONTINUOUS_CONFIDENCE_THRESHOLD", 0.5, float),
+        help="Minimum speed confidence required for continuous calibration adjustments (default: 0.5, env: DAVIS_CONTINUOUS_CONFIDENCE_THRESHOLD)"
     )
     parser.add_argument(
         "--continuous-direction-confidence-threshold", 
         type=float, 
-        default=0.0,
-        help="Minimum direction confidence required for continuous calibration adjustments (default: 0.0 = disabled)"
+        default=get_env_or_default("DAVIS_CONTINUOUS_DIRECTION_CONFIDENCE_THRESHOLD", 0.0, float),
+        help="Minimum direction confidence required for continuous calibration adjustments (default: 0.0 = disabled, env: DAVIS_CONTINUOUS_DIRECTION_CONFIDENCE_THRESHOLD)"
     )
     parser.add_argument(
         "--continuous-adjustment-rate", 
         type=float, 
-        default=0.3,
-        help="Rate of calibration adjustment per cycle (0.1-1.0, default: 0.3 = 30%% per cycle)"
+        default=get_env_or_default("DAVIS_CONTINUOUS_ADJUSTMENT_RATE", 0.3, float),
+        help="Rate of calibration adjustment per cycle (0.1-1.0, default: 0.3 = 30%% per cycle, env: DAVIS_CONTINUOUS_ADJUSTMENT_RATE)"
     )
     parser.add_argument(
         "--initial-calibration-confidence", 
         type=float, 
-        default=0.3,
-        help="Lower speed confidence threshold for initial calibration bootstrap (default: 0.3)"
+        default=get_env_or_default("DAVIS_INITIAL_CALIBRATION_CONFIDENCE", 0.3, float),
+        help="Lower speed confidence threshold for initial calibration bootstrap (default: 0.3, env: DAVIS_INITIAL_CALIBRATION_CONFIDENCE)"
     )
     parser.add_argument(
         "--initial-direction-confidence", 
         type=float, 
-        default=0.0,
-        help="Lower direction confidence threshold for initial calibration bootstrap (default: 0.0 = disabled)"
+        default=get_env_or_default("DAVIS_INITIAL_DIRECTION_CONFIDENCE", 0.0, float),
+        help="Lower direction confidence threshold for initial calibration bootstrap (default: 0.0 = disabled, env: DAVIS_INITIAL_DIRECTION_CONFIDENCE)"
     )
     parser.add_argument(
         "--initial-calibration-retry-interval", 
         type=int, 
-        default=180,
-        help="Retry interval in seconds for initial calibration when confidence is low (default: 180 = 3 minutes)"
+        default=get_env_or_default("DAVIS_INITIAL_CALIBRATION_RETRY_INTERVAL", 180, int),
+        help="Retry interval in seconds for initial calibration when confidence is low (default: 180 = 3 minutes, env: DAVIS_INITIAL_CALIBRATION_RETRY_INTERVAL)"
     )
     parser.add_argument(
         "--enable-direction-history", 
         action="store_true",
-        help="Enable building historical database of Tempest direction vs Davis pot values for non-linear calibration"
+        default=get_env_or_default("DAVIS_ENABLE_DIRECTION_HISTORY", False, bool),
+        help="Enable building historical database of Tempest direction vs Davis pot values for non-linear calibration (env: DAVIS_ENABLE_DIRECTION_HISTORY)"
     )
     parser.add_argument(
         "--direction-history-file", 
         type=str, 
-        default="direction_history.json",
-        help="File to store direction history database (default: direction_history.json)"
+        default=get_env_or_default("DAVIS_DIRECTION_HISTORY_FILE", "direction_history.json"),
+        help="File to store direction history database (default: direction_history.json, env: DAVIS_DIRECTION_HISTORY_FILE)"
     )
     return parser.parse_args()
 
@@ -2029,46 +2065,135 @@ def main():
 
                                     
                                     # Immediate debug measurements - Davis-specific data (for web interface)
+                                    # These are published to node scope (local debugging data)
+                                    timestamp = datetime.now(timezone.utc)
                                     plugin.publish("davis.wind.rps", wind_data['rotations_per_second'], 
-                                                 meta={"units": "rps", "description": "Wind sensor rotations per second"})
+                                                 timestamp=timestamp,
+                                                 scope="node",
+                                                 meta={"sensor": "davis-anemometer", 
+                                                       "units": "rps", 
+                                                       "description": "Wind sensor rotations per second",
+                                                       "missing": -9999.0})
                                     plugin.publish("davis.wind.rpm.tops", wind_data['rpm_tops'], 
-                                                 meta={"units": "rpm", "description": "Debounced RPM count"})
+                                                 timestamp=timestamp,
+                                                 scope="node",
+                                                 meta={"sensor": "davis-anemometer",
+                                                       "units": "rpm", 
+                                                       "description": "Debounced RPM count",
+                                                       "missing": -9999.0})
                                     plugin.publish("davis.wind.rpm.raw", wind_data['rpm_raw'], 
-                                                 meta={"units": "rpm", "description": "Raw RPM count"})
+                                                 timestamp=timestamp,
+                                                 scope="node",
+                                                 meta={"sensor": "davis-anemometer",
+                                                       "units": "rpm", 
+                                                       "description": "Raw RPM count",
+                                                       "missing": -9999.0})
                                     plugin.publish("davis.wind.pot.value", wind_data['pot_value'], 
-                                                 meta={"units": "counts", "description": "Raw potentiometer value for direction"})
+                                                 timestamp=timestamp,
+                                                 scope="node",
+                                                 meta={"sensor": "davis-wind-vane",
+                                                       "units": "counts", 
+                                                       "description": "Raw potentiometer value for direction",
+                                                       "missing": -9999})
                                     plugin.publish("davis.wind.iteration", wind_data['iteration'], 
-                                                 meta={"units": "count", "description": "Arduino iteration counter"})
+                                                 timestamp=timestamp,
+                                                 scope="node",
+                                                 meta={"sensor": "davis-anemometer",
+                                                       "units": "count", 
+                                                       "description": "Arduino iteration counter",
+                                                       "missing": -9999})
                                     
                                     # Publish immediate sensor status as OK
                                     plugin.publish("davis.wind.sensor_status", 1, 
-                                                 meta={"description": "Davis wind sensor status (0=error, 1=ok)"})
+                                                 timestamp=timestamp,
+                                                 scope="node",
+                                                 meta={"sensor": "davis-anemometer",
+                                                       "description": "Davis wind sensor status (0=error, 1=ok)",
+                                                       "missing": -1})
                                     
                                     # Check if it's time to publish averaged environmental data
                                     if data_collector.should_report():
                                         averaged_data = data_collector.get_averaged_data()
                                         if averaged_data:
                                             # Publish averaged environmental measurements
+                                            # These are published to beehive scope (environmental data for analysis)
+                                            env_timestamp = datetime.now(timezone.utc)
                                             plugin.publish("env.wind.speed", averaged_data['avg_wind_speed_knots'], 
-                                                         meta={"units": "knots", "description": "Average wind speed in knots", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
+                                                         timestamp=env_timestamp,
+                                                         scope="beehive",
+                                                         meta={"sensor": "davis-anemometer",
+                                                               "units": "knots", 
+                                                               "description": "Average wind speed in knots", 
+                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                               "sample_count": str(averaged_data['sample_count']),
+                                                               "missing": -9999.0})
                                             plugin.publish("env.wind.direction", averaged_data['avg_wind_direction_deg'], 
-                                                         meta={"units": "degrees", "description": "Average wind direction in degrees", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
+                                                         timestamp=env_timestamp,
+                                                         scope="beehive",
+                                                         meta={"sensor": "davis-wind-vane",
+                                                               "units": "degrees", 
+                                                               "description": "Average wind direction in degrees", 
+                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                               "sample_count": str(averaged_data['sample_count']),
+                                                               "missing": -9999.0})
                                             plugin.publish("env.wind.speed.mps", averaged_data['avg_wind_speed_mps'], 
-                                                         meta={"units": "m/s", "description": "Average wind speed in meters per second", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
+                                                         timestamp=env_timestamp,
+                                                         scope="beehive",
+                                                         meta={"sensor": "davis-anemometer",
+                                                               "units": "m/s", 
+                                                               "description": "Average wind speed in meters per second", 
+                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                               "sample_count": str(averaged_data['sample_count']),
+                                                               "missing": -9999.0})
                                             
                                             # Wind speed min/max (lull and gust)
                                             plugin.publish("env.wind.speed.min", averaged_data['min_wind_speed_knots'], 
-                                                         meta={"units": "knots", "description": "Minimum wind speed (lull) during interval", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
+                                                         timestamp=env_timestamp,
+                                                         scope="beehive",
+                                                         meta={"sensor": "davis-anemometer",
+                                                               "units": "knots", 
+                                                               "description": "Minimum wind speed (lull) during interval", 
+                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                               "sample_count": str(averaged_data['sample_count']),
+                                                               "missing": -9999.0})
                                             plugin.publish("env.wind.speed.max", averaged_data['max_wind_speed_knots'], 
-                                                         meta={"units": "knots", "description": "Maximum wind speed (gust) during interval", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
+                                                         timestamp=env_timestamp,
+                                                         scope="beehive",
+                                                         meta={"sensor": "davis-anemometer",
+                                                               "units": "knots", 
+                                                               "description": "Maximum wind speed (gust) during interval", 
+                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                               "sample_count": str(averaged_data['sample_count']),
+                                                               "missing": -9999.0})
                                             plugin.publish("env.wind.speed.min.mps", averaged_data['min_wind_speed_mps'], 
-                                                         meta={"units": "m/s", "description": "Minimum wind speed (lull) in m/s during interval", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
+                                                         timestamp=env_timestamp,
+                                                         scope="beehive",
+                                                         meta={"sensor": "davis-anemometer",
+                                                               "units": "m/s", 
+                                                               "description": "Minimum wind speed (lull) in m/s during interval", 
+                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                               "sample_count": str(averaged_data['sample_count']),
+                                                               "missing": -9999.0})
                                             plugin.publish("env.wind.speed.max.mps", averaged_data['max_wind_speed_mps'], 
-                                                         meta={"units": "m/s", "description": "Maximum wind speed (gust) in m/s during interval", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
+                                                         timestamp=env_timestamp,
+                                                         scope="beehive",
+                                                         meta={"sensor": "davis-anemometer",
+                                                               "units": "m/s", 
+                                                               "description": "Maximum wind speed (gust) in m/s during interval", 
+                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                               "sample_count": str(averaged_data['sample_count']),
+                                                               "missing": -9999.0})
                                             
                                             # Additional averaged metrics
                                             plugin.publish("env.wind.consistency", averaged_data['wind_consistency'], 
-                                                         meta={"units": "ratio", "description": "Wind direction consistency (1.0=steady, 0.0=highly variable)", "interval_seconds": str(averaged_data['interval_seconds']), "sample_count": str(averaged_data['sample_count'])})
+                                                         timestamp=env_timestamp,
+                                                         scope="beehive",
+                                                         meta={"sensor": "davis-wind-vane",
+                                                               "units": "ratio", 
+                                                               "description": "Wind direction consistency (1.0=steady, 0.0=highly variable)", 
+                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                               "sample_count": str(averaged_data['sample_count']),
+                                                               "missing": -9999.0})
                                             
                                             latest_data["last_mqtt_report"] = datetime.now()
                                             latest_data["readings_since_report"] = 0
@@ -2123,8 +2248,13 @@ def main():
                 latest_data["error_count"] += 1
                 
                 # Publish error status
+                error_timestamp = datetime.now(timezone.utc)
                 plugin.publish("davis.wind.sensor_status", 0, 
-                             meta={"description": "Davis wind sensor status (0=error, 1=ok)"})
+                             timestamp=error_timestamp,
+                             scope="node",
+                             meta={"sensor": "davis-anemometer",
+                                   "description": "Davis wind sensor status (0=error, 1=ok)",
+                                   "missing": -1})
                 logger.info("Attempting to reconnect in 5 seconds...")
                 latest_data["status"] = "reconnecting"
                 time.sleep(5.0)

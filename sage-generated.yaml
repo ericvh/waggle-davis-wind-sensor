@@ -1,0 +1,248 @@
+name: "davis-wind-sensor"
+description: "Davis wind sensor plugin for Waggle framework that interfaces with Davis anemometer and wind vane sensors via Arduino microcontroller. Reads wind speed and direction data from USB serial port, performs configurable interval averaging with proper circular statistics for wind direction, and publishes meteorologically accurate environmental measurements including averaged wind speed in knots, vector-averaged wind direction in degrees, and wind consistency metrics. Features real-time calibration, unit conversion, and comprehensive debug information with rotations per second and raw sensor values. Designed for continuous environmental monitoring and meteorological research applications."
+version: "1.0.0"
+namespace: "sage"
+keywords: ["davis", "wind", "sensor", "weather", "serial", "anemometer", "arduino"]
+long_description: "This Waggle plugin provides a comprehensive interface for Davis wind sensor systems, enabling real-time environmental monitoring for meteorological and climate research. The plugin connects to Davis anemometer and wind vane sensors through an Arduino microcontroller interface, reading serial data and performing calibrated measurements. Key features include: Real-time wind speed measurement in knots and meters per second, accurate wind direction measurement in degrees (0-360°), configurable calibration for both speed and direction, comprehensive debug output including RPM data and raw sensor values, continuous data acquisition with automatic error recovery, and multi-architecture Docker support for various deployment platforms. The plugin follows Waggle best practices and publishes data using standardized environmental topic naming conventions for compatibility with existing weather monitoring infrastructure."
+summary: "Real-time Davis wind sensor monitoring plugin for environmental research"
+authors: 
+  - "Eric Van Hensbergen <ericvh@gmail.com>"
+collaborators: []
+funding: 
+  - "Self-funded"
+license: "MIT"
+homepage: "https://github.com/ericvh/waggle-davis-wind-sensor"
+repository: "https://github.com/ericvh/waggle-davis-wind-sensor"
+documentation: "https://github.com/ericvh/waggle-davis-wind-sensor/blob/main/README.md"
+
+# Contact information
+contact:
+  email: "ericvh@gmail.com"
+  name: "Eric Van Hensbergen"
+
+# Science metadata
+science:
+  goals: "Monitor environmental wind conditions using Davis anemometer for weather and climate research"
+  description: "This plugin enables continuous monitoring of wind speed and direction using Davis wind sensors connected via Arduino. It provides real-time environmental data for meteorological studies, climate monitoring, and environmental sensing applications."
+  methodology: "Continuous serial data acquisition from Davis anemometer with real-time processing and calibration"
+  
+# Application metadata  
+app:
+  type: "environmental-monitoring"
+  category: "weather"
+  maturity: "stable"
+  description: "Environmental monitoring application for real-time wind measurement"
+  purpose: "Continuous monitoring of wind conditions for meteorological research"
+  
+# Deployment configuration
+deployment:
+  scheduling: "continuous"
+  restart_policy: "always"
+  node_selector: 
+    hardware: "serial-capable"
+  
+# Plugin timing
+timing:
+  startup_time: "10s"
+  shutdown_time: "5s"
+  data_interval: "1s"
+
+sources:
+  - architectures:
+      - "linux/amd64" 
+      - "linux/arm64"
+    url: "."
+    
+images:
+  - name: "ghcr.io/ericvh/waggle-davis-wind-sensor:latest"
+    architectures:
+      - "linux/amd64"
+      - "linux/arm64"
+
+resources:
+  - name: "davis-wind-sensor"
+    type: "job"
+    image: "ghcr.io/ericvh/waggle-davis-wind-sensor:latest"
+    command: ["python3", "main.py"]
+    arguments:
+      - "--port=/dev/ttyACM2"
+      - "--baudrate=115200"
+      - "--reporting-interval=60"
+    env:
+      - name: "PLUGIN_NAME"
+        value: "davis-wind-sensor"
+    privileged: true  # Required for serial port access
+    devices:
+      - "/dev/ttyACM2:/dev/ttyACM2"  # Map serial device
+    # Resource requirements
+    limits:
+      memory: "256Mi"
+      cpu: "0.5"
+    requests:
+      memory: "128Mi" 
+      cpu: "0.1"
+    
+# Hardware requirements
+hardware:
+  - name: "Davis Wind Sensor"
+    description: "Davis anemometer (cup-type) with wind vane"
+    required: true
+  - name: "Arduino Board" 
+    description: "Arduino Uno, Nano, or compatible microcontroller"
+    required: true
+  - name: "USB Serial Connection"
+    description: "USB connection from Arduino to compute node"
+    required: true
+
+# Software dependencies
+dependencies:
+  - name: "pyserial"
+    version: ">=3.5"
+    description: "Serial communication library"
+  - name: "pywaggle"
+    version: ">=0.50.0"
+    description: "Waggle plugin framework"
+
+inputs: []
+outputs:
+  # Primary environmental measurements (WXT-style naming)
+  # Published to beehive scope for centralized analysis
+  - name: "env.wind.speed"
+    type: "float"
+    units: "knots" 
+    description: "Wind speed in knots"
+    sensor: "davis-anemometer"
+    sensor_name: "Davis Anemometer"
+    scope: "beehive"
+    sampling_rate: "1Hz"
+    range: "0-150"
+    missing_value: -9999.0
+  - name: "env.wind.direction"
+    type: "float"
+    units: "degrees"
+    description: "Wind direction in degrees (0-360)"
+    sensor: "davis-wind-vane"
+    sensor_name: "Davis Wind Vane"
+    scope: "beehive"
+    sampling_rate: "1Hz"
+    range: "0-360"
+    missing_value: -9999.0
+  - name: "env.wind.speed.mps"
+    type: "float"
+    units: "m/s"
+    description: "Wind speed in meters per second"
+    sensor: "davis-anemometer"
+    sensor_name: "Davis Anemometer"
+    scope: "beehive"
+    sampling_rate: "1Hz"
+    range: "0-77"
+    missing_value: -9999.0
+  - name: "env.wind.speed.min"
+    type: "float"
+    units: "knots"
+    description: "Minimum wind speed (lull) during averaging interval"
+    sensor: "davis-anemometer"
+    sensor_name: "Davis Anemometer"
+    scope: "beehive"
+    sampling_rate: "configurable"
+    range: "0-150"
+    missing_value: -9999.0
+  - name: "env.wind.speed.max"
+    type: "float"
+    units: "knots"
+    description: "Maximum wind speed (gust) during averaging interval"
+    sensor: "davis-anemometer"
+    sensor_name: "Davis Anemometer"
+    scope: "beehive"
+    sampling_rate: "configurable"
+    range: "0-150"
+    missing_value: -9999.0
+  - name: "env.wind.speed.min.mps"
+    type: "float"
+    units: "m/s"
+    description: "Minimum wind speed (lull) in m/s during averaging interval"
+    sensor: "davis-anemometer"
+    sensor_name: "Davis Anemometer"
+    scope: "beehive"
+    sampling_rate: "configurable"
+    range: "0-77"
+    missing_value: -9999.0
+  - name: "env.wind.speed.max.mps"
+    type: "float"
+    units: "m/s"
+    description: "Maximum wind speed (gust) in m/s during averaging interval"
+    sensor: "davis-anemometer"
+    sensor_name: "Davis Anemometer"
+    scope: "beehive"
+    sampling_rate: "configurable"
+    range: "0-77"
+    missing_value: -9999.0
+  - name: "env.wind.consistency"
+    type: "float"
+    units: "ratio"
+    description: "Wind direction consistency metric (1.0=steady, 0.0=highly variable)"
+    sensor: "davis-wind-vane"
+    sensor_name: "Davis Wind Vane"
+    scope: "beehive"
+    sampling_rate: "configurable"
+    range: "0-1"
+    missing_value: -9999.0
+  
+  # Davis-specific debug measurements
+  # Published to node scope for local debugging
+  - name: "davis.wind.rps"
+    type: "float"
+    units: "rps"
+    description: "Wind sensor rotations per second"
+    sensor: "davis-anemometer"
+    sensor_name: "Davis Anemometer"
+    scope: "node"
+    sampling_rate: "1Hz"
+    missing_value: -9999.0
+  - name: "davis.wind.rpm.tops"
+    type: "integer"
+    units: "rpm"
+    description: "Debounced RPM count from Davis sensor"
+    sensor: "davis-anemometer"
+    sensor_name: "Davis Anemometer"
+    scope: "node"
+    sampling_rate: "1Hz"
+    missing_value: -9999.0
+  - name: "davis.wind.rpm.raw"
+    type: "integer"
+    units: "rpm"
+    description: "Raw RPM count from Davis sensor"
+    sensor: "davis-anemometer"
+    sensor_name: "Davis Anemometer"
+    scope: "node"
+    sampling_rate: "1Hz"
+    missing_value: -9999.0
+  - name: "davis.wind.pot.value"
+    type: "integer"
+    units: "counts"
+    description: "Raw potentiometer value for wind direction"
+    sensor: "davis-wind-vane"
+    sensor_name: "Davis Wind Vane"
+    scope: "node"
+    sampling_rate: "1Hz"
+    range: "0-1024"
+    missing_value: -9999
+  - name: "davis.wind.iteration"
+    type: "integer"
+    units: "count"
+    description: "Arduino iteration counter"
+    sensor: "davis-anemometer"
+    sensor_name: "Arduino"
+    scope: "node"
+    sampling_rate: "1Hz"
+    missing_value: -9999
+  - name: "davis.wind.sensor_status"
+    type: "integer"
+    units: "status"
+    description: "Davis wind sensor status (0=error, 1=ok)"
+    sensor: "davis-anemometer"
+    sensor_name: "Davis Wind Sensor System"
+    scope: "node"
+    sampling_rate: "1Hz"
+    range: "0-1"
+    missing_value: -1 
