@@ -129,6 +129,17 @@
   - Created README.md with usage examples, troubleshooting, and integration guidance
   - Added docker-compose.yml for easy deployment and testing scenarios
   - Plugin can be used independently or alongside main davis plugin for dual weather data streams
+- [x] **Scope-based publishing with comprehensive metadata**
+  - Aligned with waggle-wxt536 plugin methodology for better Waggle ecosystem compatibility
+  - Added scope parameter to all plugin.publish() calls (node vs beehive)
+  - Node scope: Debug/diagnostic data (davis.wind.* topics) kept local for troubleshooting
+  - Beehive scope: Environmental data (env.wind.* topics) sent to central server for analysis
+  - Added UTC timestamps to all published measurements for precise temporal context
+  - Added sensor identification in metadata (davis-anemometer, davis-wind-vane)
+  - Added missing value indicators (-9999.0 for floats, -9999 for ints, -1 for status)
+  - Enhanced metadata with sensor, units, description, missing, timestamp fields
+  - Updated README.md and sage-generated.yaml with complete scope and metadata documentation
+  - Fixed missing 'import sys' statement bug
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
