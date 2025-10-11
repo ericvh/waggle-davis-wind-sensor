@@ -22,10 +22,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from waggle.plugin import Plugin
 
-
+logging.basicConfig(level=logging.DEBUG)
 
 # Tempest calibration functionality is now integrated directly
-HAS_TEMPEST = True
+HAS_TEMPEST = False
 
 # Tempest UDP broadcast port
 UDP_PORT = 50222
