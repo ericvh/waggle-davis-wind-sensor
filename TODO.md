@@ -174,7 +174,11 @@
 
 ## Configuration Options 🔧
 - [ ] Add configuration file support (YAML/JSON)
-- [ ] Environment variable configuration
+- [x] Environment variable configuration
+  - All 27 command-line arguments support DAVIS_* environment variables
+  - Comprehensive documentation added to README.md with tables and examples
+  - Support for string, int, float, and boolean type conversion
+  - CLI arguments take precedence over environment variables
 - [ ] Auto-discovery of serial ports
 - [ ] Configurable data publishing intervals per measurement
 - [ ] Custom measurement naming schemes

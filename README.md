@@ -884,6 +884,136 @@ sudo usermod -a -G dialout $USER
 sudo chmod 666 /dev/ttyACM2
 ```
 
+### Environment Variables
+
+All command-line arguments can be configured using environment variables with the `DAVIS_` prefix. This is especially useful for Docker deployments and automated configurations.
+
+**Precedence:** Command-line arguments take precedence over environment variables.
+
+#### Basic Configuration
+
+| Environment Variable | CLI Argument | Type | Default | Description |
+|---------------------|--------------|------|---------|-------------|
+| `DAVIS_PORT` | `--port` | string | `/host/dev/serial/by-id/usb-Seeed_...` | Serial port device path |
+| `DAVIS_BAUDRATE` | `--baudrate` | int | `115200` | Serial port baud rate |
+| `DAVIS_TIMEOUT` | `--timeout` | float | `30.0` | Serial port timeout in seconds |
+| `DAVIS_DEBUG` | `--debug` | bool | `false` | Enable debug output |
+| `DAVIS_REPORTING_INTERVAL` | `--reporting-interval` | int | `60` | MQTT reporting interval in seconds |
+
+#### Calibration Settings
+
+| Environment Variable | CLI Argument | Type | Default | Description |
+|---------------------|--------------|------|---------|-------------|
+| `DAVIS_CALIBRATION_FACTOR` | `--calibration-factor` | float | `9.0` | Wind speed calibration factor |
+| `DAVIS_DIRECTION_OFFSET` | `--direction-offset` | float | `-94.43` | Wind direction offset in degrees |
+| `DAVIS_DIRECTION_SCALE` | `--direction-scale` | float | `1.0` | Wind direction scaling factor |
+
+#### Web Interface Settings
+
+| Environment Variable | CLI Argument | Type | Default | Description |
+|---------------------|--------------|------|---------|-------------|
+| `DAVIS_WEB_SERVER` | `--web-server` | bool | `false` | Enable web monitoring interface |
+| `DAVIS_WEB_PORT` | `--web-port` | int | `8080` | Web server port |
+
+#### Auto-Calibration Settings
+
+| Environment Variable | CLI Argument | Type | Default | Description |
+|---------------------|--------------|------|---------|-------------|
+| `DAVIS_AUTO_CALIBRATE` | `--auto-calibrate` | bool | `false` | Run automatic Tempest calibration at startup |
+| `DAVIS_CALIBRATION_SAMPLES` | `--calibration-samples` | int | `10` | Number of samples for auto-calibration |
+| `DAVIS_CALIBRATION_INTERVAL` | `--calibration-interval` | int | `5` | Seconds between calibration samples |
+| `DAVIS_CALIBRATION_TIMEOUT` | `--calibration-timeout` | int | `300` | Maximum calibration time in seconds |
+| `DAVIS_MIN_CALIBRATION_CONFIDENCE` | `--min-calibration-confidence` | float | `0.7` | Minimum confidence for auto-calibration |
+| `DAVIS_NO_FIREWALL` | `--no-firewall` | bool | `false` | Skip automatic firewall setup |
+
+#### Continuous Calibration Settings
+
+| Environment Variable | CLI Argument | Type | Default | Description |
+|---------------------|--------------|------|---------|-------------|
+| `DAVIS_CONTINUOUS_CALIBRATION` | `--continuous-calibration` | bool | `false` | Enable continuous calibration mode |
+| `DAVIS_CONTINUOUS_INTERVAL` | `--continuous-interval` | int | `900` | Interval between adjustments (seconds) |
+| `DAVIS_CONTINUOUS_SAMPLES` | `--continuous-samples` | int | `20` | Samples per calibration cycle |
+| `DAVIS_CONTINUOUS_SAMPLE_INTERVAL` | `--continuous-sample-interval` | int | `5` | Seconds between samples |
+| `DAVIS_CONTINUOUS_CONFIDENCE_THRESHOLD` | `--continuous-confidence-threshold` | float | `0.5` | Min speed confidence for adjustments |
+| `DAVIS_CONTINUOUS_DIRECTION_CONFIDENCE_THRESHOLD` | `--continuous-direction-confidence-threshold` | float | `0.0` | Min direction confidence (0 = disabled) |
+| `DAVIS_CONTINUOUS_ADJUSTMENT_RATE` | `--continuous-adjustment-rate` | float | `0.3` | Adjustment rate per cycle (0.1-1.0) |
+| `DAVIS_INITIAL_CALIBRATION_CONFIDENCE` | `--initial-calibration-confidence` | float | `0.3` | Lower threshold for bootstrap |
+| `DAVIS_INITIAL_DIRECTION_CONFIDENCE` | `--initial-direction-confidence` | float | `0.0` | Bootstrap direction threshold (0 = disabled) |
+| `DAVIS_INITIAL_CALIBRATION_RETRY_INTERVAL` | `--initial-calibration-retry-interval` | int | `180` | Bootstrap retry interval (seconds) |
+
+#### Direction History Settings
+
+| Environment Variable | CLI Argument | Type | Default | Description |
+|---------------------|--------------|------|---------|-------------|
+| `DAVIS_ENABLE_DIRECTION_HISTORY` | `--enable-direction-history` | bool | `false` | Enable direction history database |
+| `DAVIS_DIRECTION_HISTORY_FILE` | `--direction-history-file` | string | `direction_history.json` | History database file path |
+
+#### Boolean Values
+
+For boolean environment variables, use any of: `true`, `1`, `yes`, `on` (case-insensitive) for true, anything else for false.
+
+#### Usage Examples
+
+**Basic configuration with environment variables:**
+```bash
+export DAVIS_PORT=/dev/ttyUSB0
+export DAVIS_BAUDRATE=9600
+export DAVIS_DEBUG=true
+python3 main.py
+```
+
+**Docker deployment with environment variables:**
+```bash
+docker run \
+  -e DAVIS_PORT=/dev/ttyACM2 \
+  -e DAVIS_CALIBRATION_FACTOR=9.5 \
+  -e DAVIS_DIRECTION_OFFSET=-94.43 \
+  -e DAVIS_WEB_SERVER=true \
+  -e DAVIS_WEB_PORT=8080 \
+  --device=/dev/ttyACM2:/dev/ttyACM2 \
+  ghcr.io/ericvh/waggle-davis-wind-sensor:latest
+```
+
+**Continuous calibration via environment variables:**
+```bash
+docker run \
+  -e DAVIS_CONTINUOUS_CALIBRATION=true \
+  -e DAVIS_CONTINUOUS_INTERVAL=600 \
+  -e DAVIS_CONTINUOUS_SAMPLES=30 \
+  -e DAVIS_INITIAL_CALIBRATION_CONFIDENCE=0.3 \
+  --device=/dev/ttyACM2:/dev/ttyACM2 \
+  --network host \
+  --privileged \
+  ghcr.io/ericvh/waggle-davis-wind-sensor:latest
+```
+
+**Docker Compose example:**
+```yaml
+version: '3.8'
+services:
+  davis-sensor:
+    image: ghcr.io/ericvh/waggle-davis-wind-sensor:latest
+    devices:
+      - /dev/ttyACM2:/dev/ttyACM2
+    network_mode: host
+    privileged: true
+    environment:
+      - DAVIS_PORT=/dev/ttyACM2
+      - DAVIS_BAUDRATE=115200
+      - DAVIS_CALIBRATION_FACTOR=9.0
+      - DAVIS_DIRECTION_OFFSET=-94.43
+      - DAVIS_WEB_SERVER=true
+      - DAVIS_CONTINUOUS_CALIBRATION=true
+      - DAVIS_REPORTING_INTERVAL=60
+```
+
+**Override environment variables with CLI arguments:**
+```bash
+# DAVIS_PORT is set in environment, but CLI overrides it
+export DAVIS_PORT=/dev/ttyUSB0
+python3 main.py --port /dev/ttyACM2  # Uses /dev/ttyACM2, not /dev/ttyUSB0
+```
+
 ### Calibration
 
 #### Wind Speed Calibration
