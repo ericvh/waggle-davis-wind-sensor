@@ -2,43 +2,31 @@
 
 This file documents all implementation details and changes to the project.
 
-## 2025-10-11 - Enhanced Publishing with Timestamps and Sensor Metadata
+## 2025-10-11 - Reverted to Simple Publishing for Sage/Kubernetes Compatibility
 
 ### Changes
-- **Updated all plugin.publish() calls to include comprehensive Waggle metadata**
-  - Aligned with waggle-wxt536 plugin's publishing methodology
-  - Added UTC timestamps to all published measurements
-  - Added sensor identification in metadata (davis-anemometer-6410)
-  - Added missing value indicators for data quality
-  - Note: Scope-based publishing initially tested but removed for Sage/Kubernetes compatibility
+- **Reverted plugin.publish() calls to simple format for production compatibility**
+  - Removed timestamp parameter from all publish calls
+  - Removed meta dictionary parameter from all publish calls
+  - Back to basic format: `plugin.publish(name, value)`
+  
+### Background
+- Initially attempted to add comprehensive metadata (timestamps, sensor ID, missing values, scope)
+- Aligned approach with waggle-wxt536 plugin methodology
+- However, enhanced metadata parameters caused silent failures in Sage/Kubernetes production environment
+- Reverted to original simple publishing format that is known to work reliably
 
-### Metadata Fields
-Each published measurement now includes:
-- `sensor`: Identifier for the physical sensor (e.g., "davis-anemometer", "davis-wind-vane")
-- `units`: Measurement units
-- `description`: Human-readable description
-- `missing`: Missing value indicator (-9999.0 for floats, -9999 for integers, -1 for status)
-- `timestamp`: UTC timestamp of measurement
-- Additional fields for averaged data: `interval_seconds`, `sample_count`
+### Current Implementation
+- Simple two-parameter publishing: topic name and value only
+- All measurements published with default Waggle behavior
+- No custom timestamps, metadata, or scope parameters
+- **Added missing `import sys` statement** (bug fix remains in place)
 
-### Benefits
-- **Improved Compatibility**: Aligns with standard Waggle plugin patterns used by other weather sensors
-- **Data Quality**: Missing value indicators enable proper handling of invalid/unavailable data
-- **Time Precision**: UTC timestamps ensure accurate temporal context for measurements
-- **Sensor Traceability**: Explicit sensor identification in metadata supports multi-sensor deployments
-
-### Files Modified
-- `main.py` - Updated all plugin.publish() calls with new metadata structure
-- `main.py` - Added missing `import sys` statement (bug fix)
-- `main.py` - Removed scope parameter (was causing Sage/Kubernetes compatibility issues)
-- `sage-generated.yaml` - Updated output definitions with sensor and missing_value fields
-
-### Technical Implementation
-- UTC timestamps generated using `datetime.now(timezone.utc)`
-- Separate timestamps for debug and environmental data
-- Missing value convention: -9999.0 for float measurements, -9999 for integers, -1 for status codes
-- Sensor identifier: "davis-anemometer-6410" for all measurements (includes model number for specificity)
-- Uses default scope behavior (scope='all') for Sage/Kubernetes compatibility
+### Lessons Learned
+- Sage/Kubernetes environment has specific requirements for plugin.publish() format
+- Enhanced metadata features may not be compatible with production infrastructure
+- Simple publishing format is most reliable for field deployments
+- Future metadata enhancements should be tested in production environment first
 
 ## 2025-10-11 - Environment Variable Documentation
 
