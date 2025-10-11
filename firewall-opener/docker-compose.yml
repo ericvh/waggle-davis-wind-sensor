@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  firewall-opener:
+    build: .
+    container_name: tempest-firewall-opener
+    privileged: true
+    environment:
+      - FIREWALL_PORT=50222
+      - FIREWALL_ACTION=setup
+      - FIREWALL_WAIT=0
+    restart: unless-stopped
+    networks:
+      - tempest-network
+
+  # Alternative service with host network mode
+  firewall-opener-host:
+    build: .
+    container_name: tempest-firewall-opener-host
+    privileged: true
+    network_mode: host
+    environment:
+      - FIREWALL_PORT=50222
+      - FIREWALL_ACTION=setup
+      - FIREWALL_WAIT=0
+    restart: unless-stopped
+
+  # Service for cleanup only
+  firewall-cleanup:
+    build: .
+    container_name: tempest-firewall-cleanup
+    privileged: true
+    environment:
+      - FIREWALL_PORT=50222
+      - FIREWALL_ACTION=cleanup
+      - FIREWALL_WAIT=0
+    restart: "no"
+
+  # Service for status check
+  firewall-status:
+    build: .
+    container_name: tempest-firewall-status
+    privileged: true
+    environment:
+      - FIREWALL_PORT=50222
+      - FIREWALL_ACTION=status
+      - FIREWALL_WAIT=0
+    restart: "no"
+
+networks:
+  tempest-network:
+    driver: bridge

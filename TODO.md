@@ -119,6 +119,16 @@
   - Added README.md with usage examples and troubleshooting guide
   - Container can be used as sidecar service or standalone firewall management tool
   - Supports privileged mode and capability-based security for different deployment scenarios
+- [x] **Extract Tempest weather station code into standalone Waggle plugin**
+  - Created tempest-plugin subdirectory with standalone Tempest waggle plugin
+  - Extracted Tempest UDP parsers and data structures from main.py and tempest.py
+  - Built complete Waggle plugin that publishes Tempest data to message stream
+  - Added comprehensive data publishing for wind, temperature, humidity, pressure, precipitation, lightning
+  - Created Docker container with proper network configuration for UDP broadcasts
+  - Added sage.yaml configuration with all published topics and metadata
+  - Created README.md with usage examples, troubleshooting, and integration guidance
+  - Added docker-compose.yml for easy deployment and testing scenarios
+  - Plugin can be used independently or alongside main davis plugin for dual weather data streams
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware

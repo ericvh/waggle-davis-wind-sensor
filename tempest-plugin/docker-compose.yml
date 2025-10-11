@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  tempest-plugin:
+    build: .
+    container_name: tempest-weather-plugin
+    network_mode: host
+    environment:
+      - TEMPEST_UDP_PORT=50222
+      - TEMPEST_PUBLISH_INTERVAL=60
+      - TEMPEST_DEBUG=false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "/app/main.py", "--help"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Alternative service with custom port
+  tempest-plugin-custom:
+    build: .
+    container_name: tempest-weather-plugin-custom
+    network_mode: host
+    environment:
+      - TEMPEST_UDP_PORT=50223
+      - TEMPEST_PUBLISH_INTERVAL=30
+      - TEMPEST_DEBUG=true
+    restart: unless-stopped
+    profiles:
+      - custom
+
+  # Service for testing
+  tempest-plugin-test:
+    build: .
+    container_name: tempest-weather-plugin-test
+    network_mode: host
+    environment:
+      - TEMPEST_UDP_PORT=50222
+      - TEMPEST_PUBLISH_INTERVAL=10
+      - TEMPEST_DEBUG=true
+    restart: "no"
+    profiles:
+      - test
+
+  # Integration with firewall opener from main project
+  firewall-opener:
+    build: ../firewall-opener
+    container_name: tempest-firewall-opener
+    privileged: true
+    environment:
+      - FIREWALL_PORT=50222
+      - FIREWALL_ACTION=setup
+      - FIREWALL_WAIT=0
+    restart: unless-stopped
+    profiles:
+      - with-firewall
+
+  # Combined deployment with firewall management
+  tempest-with-firewall:
+    build: .
+    container_name: tempest-weather-with-firewall
+    network_mode: host
+    environment:
+      - TEMPEST_UDP_PORT=50222
+      - TEMPEST_PUBLISH_INTERVAL=60
+      - TEMPEST_DEBUG=false
+    restart: unless-stopped
+    depends_on:
+      - firewall-opener
+    profiles:
+      - with-firewall
+

@@ -1,0 +1,15 @@
+# Tempest Weather Station Waggle Plugin Requirements
+# ================================================
+
+# Waggle plugin framework
+waggle>=0.7.0
+
+# Standard library modules (no additional requirements needed)
+# - json (built-in)
+# - socket (built-in) 
+# - threading (built-in)
+# - time (built-in)
+# - datetime (built-in)
+# - logging (built-in)
+# - argparse (built-in)
+
