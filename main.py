@@ -465,8 +465,8 @@ def parse_args():
     )
     parser.add_argument(
         "--port", 
-        default="/host/dev/serial-by-id/usb-Seeed_Seeeduino_XIAO_C9C906D45030524E572E3120FF15183E-if00", 
-        help="Serial port device (default: /host/dev/serial-by-id/usb-Seeed_Seeeduino_XIAO_C9C906D45030524E572E3120FF15183E-if00)"
+        default="/host/dev/serial/by-id/usb-Seeed_Seeeduino_XIAO_C9C906D45030524E572E3120FF15183E-if00", 
+        help="Serial port device (default: /host/dev/serial/by-id/usb-Seeed_Seeeduino_XIAO_C9C906D45030524E572E3120FF15183E-if00)"
     )
     parser.add_argument(
         "--baudrate", 
