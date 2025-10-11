@@ -1925,6 +1925,7 @@ class ContinuousCalibrator:
 
 def main():
     args = parse_args()
+    done = False
     
     # Configure logging
     logging.basicConfig(
@@ -2025,10 +2026,8 @@ def main():
         global latest_data
         latest_data["status"] = "connecting"
         
-
-        
         # Main loop with automatic reconnection
-        while True:
+        while not done:
             try:
                 # Continuously read and process data as it arrives
                 with wind_reader.serial_connection() as ser:
@@ -2115,6 +2114,7 @@ def main():
                                             
                                             # Reset collector for next interval
                                             data_collector.reset_collection()
+                                            done = True
                                     
                                     # Log individual reading for debugging/monitoring
                                     logger.debug(f"Reading: {wind_data['wind_speed_knots']:.2f} knots, "
