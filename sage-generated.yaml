@@ -106,14 +106,12 @@ dependencies:
 inputs: []
 outputs:
   # Primary environmental measurements (WXT-style naming)
-  # Published to beehive scope for centralized analysis
   - name: "env.wind.speed"
     type: "float"
     units: "knots" 
     description: "Wind speed in knots"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "beehive"
     sampling_rate: "1Hz"
     range: "0-150"
     missing_value: -9999.0
@@ -123,7 +121,6 @@ outputs:
     description: "Wind direction in degrees (0-360)"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "beehive"
     sampling_rate: "1Hz"
     range: "0-360"
     missing_value: -9999.0
@@ -133,7 +130,6 @@ outputs:
     description: "Wind speed in meters per second"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "beehive"
     sampling_rate: "1Hz"
     range: "0-77"
     missing_value: -9999.0
@@ -143,7 +139,6 @@ outputs:
     description: "Minimum wind speed (lull) during averaging interval"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "beehive"
     sampling_rate: "configurable"
     range: "0-150"
     missing_value: -9999.0
@@ -153,7 +148,6 @@ outputs:
     description: "Maximum wind speed (gust) during averaging interval"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "beehive"
     sampling_rate: "configurable"
     range: "0-150"
     missing_value: -9999.0
@@ -163,7 +157,6 @@ outputs:
     description: "Minimum wind speed (lull) in m/s during averaging interval"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "beehive"
     sampling_rate: "configurable"
     range: "0-77"
     missing_value: -9999.0
@@ -173,7 +166,6 @@ outputs:
     description: "Maximum wind speed (gust) in m/s during averaging interval"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "beehive"
     sampling_rate: "configurable"
     range: "0-77"
     missing_value: -9999.0
@@ -183,20 +175,17 @@ outputs:
     description: "Wind direction consistency metric (1.0=steady, 0.0=highly variable)"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "beehive"
     sampling_rate: "configurable"
     range: "0-1"
     missing_value: -9999.0
   
   # Davis-specific debug measurements
-  # Published to node scope for local debugging
   - name: "davis.wind.rps"
     type: "float"
     units: "rps"
     description: "Wind sensor rotations per second"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "node"
     sampling_rate: "1Hz"
     missing_value: -9999.0
   - name: "davis.wind.rpm.tops"
@@ -205,7 +194,6 @@ outputs:
     description: "Debounced RPM count from Davis sensor"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "node"
     sampling_rate: "1Hz"
     missing_value: -9999.0
   - name: "davis.wind.rpm.raw"
@@ -214,7 +202,6 @@ outputs:
     description: "Raw RPM count from Davis sensor"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "node"
     sampling_rate: "1Hz"
     missing_value: -9999.0
   - name: "davis.wind.pot.value"
@@ -223,7 +210,6 @@ outputs:
     description: "Raw potentiometer value for wind direction"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "node"
     sampling_rate: "1Hz"
     range: "0-1024"
     missing_value: -9999
@@ -233,7 +219,6 @@ outputs:
     description: "Arduino iteration counter"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "node"
     sampling_rate: "1Hz"
     missing_value: -9999
   - name: "davis.wind.sensor_status"
@@ -242,7 +227,6 @@ outputs:
     description: "Davis wind sensor status (0=error, 1=ok)"
     sensor: "davis-anemometer-6410"
     sensor_name: "Davis Anemometer 6410"
-    scope: "node"
     sampling_rate: "1Hz"
     range: "0-1"
     missing_value: -1 

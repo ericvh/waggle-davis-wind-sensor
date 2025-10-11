@@ -27,15 +27,9 @@ A Waggle plugin that reads Davis wind sensor data from Arduino via USB serial po
 
 ## Data Outputs
 
-The plugin publishes measurements with comprehensive metadata including scopes, timestamps, sensor identification, and missing value indicators. This aligns with standard Waggle plugin patterns for better data organization and quality.
-
-### Publishing Scopes
-
-- **Beehive Scope**: Environmental data sent to central Beehive server for analysis and archival
-- **Node Scope**: Debug and diagnostic data kept local to the node for troubleshooting
+The plugin publishes measurements with comprehensive metadata including timestamps, sensor identification, and missing value indicators. This aligns with standard Waggle plugin patterns for better data organization and quality.
 
 ### Primary Environmental Data (WXT-compatible)
-**Scope: `beehive`** - Published to central Beehive for scientific analysis
 
 | Measurement | Units | Sensor | Description | Missing Value |
 |-------------|-------|--------|-------------|---------------|
@@ -57,7 +51,6 @@ All environmental measurements include UTC timestamps and metadata fields:
 - `missing`: Missing value indicator
 
 ### Davis-Specific Debug Data
-**Scope: `node`** - Published locally for debugging and troubleshooting
 
 | Measurement | Units | Sensor | Description | Missing Value |
 |-------------|-------|--------|-------------|---------------|
