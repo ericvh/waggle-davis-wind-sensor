@@ -1,5 +1,5 @@
 name: "waggle-davis-wind-sensor"
-version: "1.0.4"
+version: "1.0.5"
 description: "Waggle plugin to get data from a Davis 6410 Wind Sensor"
 keywords: ""
 authors: "Eric Van Hensbergen"
