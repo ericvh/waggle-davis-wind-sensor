@@ -56,7 +56,7 @@ Each published measurement now includes:
 - UTC timestamps generated using `datetime.now(timezone.utc)`
 - Separate timestamps for debug (node scope) and environmental (beehive scope) data
 - Missing value convention: -9999.0 for float measurements, -9999 for integers, -1 for status codes
-- Sensor identifiers: "davis-anemometer" for speed data, "davis-wind-vane" for direction data
+- Sensor identifier: "davis-anemometer-6410" for all measurements (includes model number for specificity)
 
 ## 2025-10-11 - Environment Variable Documentation
 

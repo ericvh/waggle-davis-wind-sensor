@@ -39,14 +39,14 @@ The plugin publishes measurements with comprehensive metadata including scopes, 
 
 | Measurement | Units | Sensor | Description | Missing Value |
 |-------------|-------|--------|-------------|---------------|
-| `env.wind.speed` | knots | davis-anemometer | Averaged wind speed in knots | -9999.0 |
-| `env.wind.direction` | degrees | davis-wind-vane | Vector-averaged wind direction (0-360°) | -9999.0 |
-| `env.wind.speed.mps` | m/s | davis-anemometer | Averaged wind speed in meters per second | -9999.0 |
-| `env.wind.speed.min` | knots | davis-anemometer | Minimum wind speed (lull) during interval | -9999.0 |
-| `env.wind.speed.max` | knots | davis-anemometer | Maximum wind speed (gust) during interval | -9999.0 |
-| `env.wind.speed.min.mps` | m/s | davis-anemometer | Minimum wind speed (lull) in m/s during interval | -9999.0 |
-| `env.wind.speed.max.mps` | m/s | davis-anemometer | Maximum wind speed (gust) in m/s during interval | -9999.0 |
-| `env.wind.consistency` | ratio | davis-wind-vane | Wind direction consistency (1.0=steady, 0.0=highly variable) | -9999.0 |
+| `env.wind.speed` | knots | davis-anemometer-6410 | Averaged wind speed in knots | -9999.0 |
+| `env.wind.direction` | degrees | davis-anemometer-6410 | Vector-averaged wind direction (0-360°) | -9999.0 |
+| `env.wind.speed.mps` | m/s | davis-anemometer-6410 | Averaged wind speed in meters per second | -9999.0 |
+| `env.wind.speed.min` | knots | davis-anemometer-6410 | Minimum wind speed (lull) during interval | -9999.0 |
+| `env.wind.speed.max` | knots | davis-anemometer-6410 | Maximum wind speed (gust) during interval | -9999.0 |
+| `env.wind.speed.min.mps` | m/s | davis-anemometer-6410 | Minimum wind speed (lull) in m/s during interval | -9999.0 |
+| `env.wind.speed.max.mps` | m/s | davis-anemometer-6410 | Maximum wind speed (gust) in m/s during interval | -9999.0 |
+| `env.wind.consistency` | ratio | davis-anemometer-6410 | Wind direction consistency (1.0=steady, 0.0=highly variable) | -9999.0 |
 
 All environmental measurements include UTC timestamps and metadata fields:
 - `sensor`: Physical sensor identifier
@@ -61,12 +61,12 @@ All environmental measurements include UTC timestamps and metadata fields:
 
 | Measurement | Units | Sensor | Description | Missing Value |
 |-------------|-------|--------|-------------|---------------|
-| `davis.wind.rps` | rps | davis-anemometer | Sensor rotations per second | -9999.0 |
-| `davis.wind.rpm.tops` | rpm | davis-anemometer | Debounced RPM count | -9999.0 |
-| `davis.wind.rpm.raw` | rpm | davis-anemometer | Raw RPM count | -9999.0 |
-| `davis.wind.pot.value` | counts | davis-wind-vane | Raw potentiometer value (0-1024) | -9999 |
-| `davis.wind.iteration` | count | davis-anemometer | Arduino iteration counter | -9999 |
-| `davis.wind.sensor_status` | status | davis-anemometer | Sensor status (0=error, 1=ok) | -1 |
+| `davis.wind.rps` | rps | davis-anemometer-6410 | Sensor rotations per second | -9999.0 |
+| `davis.wind.rpm.tops` | rpm | davis-anemometer-6410 | Debounced RPM count | -9999.0 |
+| `davis.wind.rpm.raw` | rpm | davis-anemometer-6410 | Raw RPM count | -9999.0 |
+| `davis.wind.pot.value` | counts | davis-anemometer-6410 | Raw potentiometer value (0-1024) | -9999 |
+| `davis.wind.iteration` | count | davis-anemometer-6410 | Arduino iteration counter | -9999 |
+| `davis.wind.sensor_status` | status | davis-anemometer-6410 | Sensor status (0=error, 1=ok) | -1 |
 
 Debug measurements include UTC timestamps and sensor identification for diagnostic purposes.
 
