@@ -2231,7 +2231,7 @@ def main():
                     latest_data["error_count"] += 1
                     
                      # Publish error status
-                     plugin.publish("davis.wind.sensor_status", 0, 
+                    plugin.publish("davis.wind.sensor_status", 0, 
                                  scope="node",
                                  meta={"sensor": "davis-anemometer-6410",
                                      "description": "Davis wind sensor status (0=error, 1=ok)",
