@@ -465,8 +465,8 @@ def parse_args():
     )
     parser.add_argument(
         "--port", 
-        default="/dev/ttyACM2", 
-        help="Serial port device (default: /dev/ttyACM2)"
+        default="/host/dev/usb-Seeed_Seeeduino_XIAO_C9C906D45030524E572E3120FF15183E-if00", 
+        help="Serial port device (default: /host/dev/usb-Seeed_Seeeduino_XIAO_C9C906D45030524E572E3120FF15183E-if00)"
     )
     parser.add_argument(
         "--baudrate", 
@@ -489,14 +489,14 @@ def parse_args():
     parser.add_argument(
         "--calibration-factor", 
         type=float, 
-        default=1.0, 
-        help="Wind speed calibration factor (default: 1.0)"
+        default=9.0, 
+        help="Wind speed calibration factor (default: 9.0)"
     )
     parser.add_argument(
         "--direction-offset", 
         type=float, 
-        default=0.0, 
-        help="Wind direction offset in degrees (default: 0.0)"
+        default=-94.43, 
+        help="Wind direction offset in degrees (default: -94.43)"
     )
     parser.add_argument(
         "--direction-scale", 
