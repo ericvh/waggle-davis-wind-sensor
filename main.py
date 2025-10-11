@@ -1935,344 +1935,343 @@ def main():
     logger = logging.getLogger(__name__)
     
     # Initialize Waggle plugin
-    plugin = Plugin()
+    with Plugin() as plugin:
     
-    # Auto-calibration with Tempest if requested
-    calibration_factor = args.calibration_factor
-    direction_offset = args.direction_offset
-    
-    if args.auto_calibrate:
-        logger.info("🎯 Auto-calibration requested - starting Tempest calibration...")
+        # Auto-calibration with Tempest if requested
+        calibration_factor = args.calibration_factor
+        direction_offset = args.direction_offset
         
-        # Run auto-calibration
-        auto_cal_factor, auto_direction_offset = run_auto_calibration(args, logger)
-        
-        if auto_cal_factor is not None and auto_direction_offset is not None:
-            # Apply auto-calibration results
-            calibration_factor = auto_cal_factor
-            direction_offset = auto_direction_offset
+        if args.auto_calibrate:
+            logger.info("🎯 Auto-calibration requested - starting Tempest calibration...")
             
-            logger.info("✅ Auto-calibration successful!")
-            logger.info(f"   Applied speed factor: {calibration_factor:.4f}")
-            logger.info(f"   Applied direction offset: {direction_offset:.2f}°")
-        else:
-            logger.info("⚠️  Auto-calibration setup completed, using manual calibration values")
-            logger.info("💡 Use standalone calibration utility for full calibration: python3 tempest.py --calibrate")
-        
-        logger.info("")
-    
-    # Initialize wind sensor reader
-    wind_reader = WindSensorReader(
-        port=args.port,
-        baudrate=args.baudrate,
-        timeout=args.timeout,
-        calibration_factor=calibration_factor,
-        direction_offset=direction_offset,
-        direction_scale=args.direction_scale
-    )
-    
-    logger.info(f"Starting wind sensor plugin on port {args.port}")
-    logger.info(f"Wind speed calibration factor: {calibration_factor}")
-    logger.info(f"Wind direction offset: {direction_offset}°")
-    logger.info(f"Wind direction scale: {args.direction_scale}")
-    logger.info(f"MQTT reporting interval: {args.reporting_interval} seconds")
-    
-    # Initialize data collector for averaged reporting
-    data_collector = WindDataCollector(args.reporting_interval)
-    
-    # Initialize continuous calibration if requested
-    continuous_calibrator = None
-    if args.continuous_calibration:
-        logger.info("🔄 Continuous calibration mode enabled")
-        
-        # Start Tempest UDP listener for continuous calibration
-        if not args.no_firewall:
-            firewall_manager_continuous = FirewallManager()
-            logger.info("Setting up firewall for continuous calibration Tempest UDP broadcasts...")
-            if not firewall_manager_continuous.setup_firewall():
-                logger.warning("⚠️  Firewall setup may be incomplete for continuous calibration")
+            # Run auto-calibration
+            auto_cal_factor, auto_direction_offset = run_auto_calibration(args, logger)
+            
+            if auto_cal_factor is not None and auto_direction_offset is not None:
+                # Apply auto-calibration results
+                calibration_factor = auto_cal_factor
+                direction_offset = auto_direction_offset
+                
+                logger.info("✅ Auto-calibration successful!")
+                logger.info(f"   Applied speed factor: {calibration_factor:.4f}")
+                logger.info(f"   Applied direction offset: {direction_offset:.2f}°")
             else:
-                logger.info("✅ Firewall setup completed for continuous calibration")
+                logger.info("⚠️  Auto-calibration setup completed, using manual calibration values")
+                logger.info("💡 Use standalone calibration utility for full calibration: python3 tempest.py --calibrate")
+            
+            logger.info("")
         
-        # Start UDP listener thread for continuous calibration
-        udp_thread_continuous = threading.Thread(target=tempest_udp_listener, daemon=True)
-        udp_thread_continuous.start()
-        logger.info("🌐 Started Tempest UDP listener for continuous calibration")
-        
-        # Initialize continuous calibrator
-        continuous_calibrator = ContinuousCalibrator(wind_reader, args, logger)
-        
-        # Wait a moment for Tempest data, then start continuous calibration
-        logger.info("⏳ Waiting briefly for Tempest data before starting continuous calibration...")
-        time.sleep(5)
-        continuous_calibrator.start()
-
-    
-    # Start web server if requested
-    if args.web_server:
-        web_thread = threading.Thread(
-            target=start_web_server, 
-            args=(args.web_port, logger),
-            daemon=True
+        # Initialize wind sensor reader
+        wind_reader = WindSensorReader(
+            port=args.port,
+            baudrate=args.baudrate,
+            timeout=args.timeout,
+            calibration_factor=calibration_factor,
+            direction_offset=direction_offset,
+            direction_scale=args.direction_scale
         )
-        web_thread.start()
-        logger.info(f"Web monitoring enabled on port {args.web_port}")
-    
-    logger.info("Waiting for data from Davis wind sensor...")
-    logger.info(f"Environmental data will be averaged and published every {args.reporting_interval} seconds")
-    
-    try:
-        # Update global status
-        global latest_data
-        latest_data["status"] = "connecting"
         
-        # Main loop with automatic reconnection
-        while not done:
-            try:
-                # Continuously read and process data as it arrives
-                with wind_reader.serial_connection() as ser:
-                    logger.info("Connected to serial port, reading data continuously...")
-                    latest_data["status"] = "running"
-                    
-                    while not done:
-                        try:
-                            # Block waiting for a line of data
-                            line = ser.readline().decode('utf-8', errors='ignore')
-                            
-                            if line.strip():  # Only process non-empty lines
-                                logger.debug(f"Raw serial data: {line.strip()}")
-                                
-                                # Update global data for web server
-                                latest_data["raw_line"] = line.strip()
-                                latest_data["timestamp"] = datetime.now()
-                                
-                                wind_data = wind_reader.parse_wind_data(line)
-                                
-                                if wind_data:
-                                    # Update global data for web server (immediate/real-time)
-                                    latest_data["wind_data"] = wind_data
-                                    latest_data["total_readings"] += 1
-                                    latest_data["readings_since_report"] += 1
-                                    
-                                    # Add reading to data collector for averaging
-                                    data_collector.add_reading(wind_data)
-                                    
-                                    # Provide data to continuous calibrator if it's collecting samples
-                                    if continuous_calibrator and continuous_calibrator.is_collecting_samples():
-                                        continuous_calibrator.add_data_sample(wind_data)
-                                    
+        logger.info(f"Starting wind sensor plugin on port {args.port}")
+        logger.info(f"Wind speed calibration factor: {calibration_factor}")
+        logger.info(f"Wind direction offset: {direction_offset}°")
+        logger.info(f"Wind direction scale: {args.direction_scale}")
+        logger.info(f"MQTT reporting interval: {args.reporting_interval} seconds")
+        
+        # Initialize data collector for averaged reporting
+        data_collector = WindDataCollector(args.reporting_interval)
+        
+        # Initialize continuous calibration if requested
+        continuous_calibrator = None
+        if args.continuous_calibration:
+            logger.info("🔄 Continuous calibration mode enabled")
+            
+            # Start Tempest UDP listener for continuous calibration
+            if not args.no_firewall:
+                firewall_manager_continuous = FirewallManager()
+                logger.info("Setting up firewall for continuous calibration Tempest UDP broadcasts...")
+                if not firewall_manager_continuous.setup_firewall():
+                    logger.warning("⚠️  Firewall setup may be incomplete for continuous calibration")
+                else:
+                    logger.info("✅ Firewall setup completed for continuous calibration")
+            
+            # Start UDP listener thread for continuous calibration
+            udp_thread_continuous = threading.Thread(target=tempest_udp_listener, daemon=True)
+            udp_thread_continuous.start()
+            logger.info("🌐 Started Tempest UDP listener for continuous calibration")
+            
+            # Initialize continuous calibrator
+            continuous_calibrator = ContinuousCalibrator(wind_reader, args, logger)
+            
+            # Wait a moment for Tempest data, then start continuous calibration
+            logger.info("⏳ Waiting briefly for Tempest data before starting continuous calibration...")
+            time.sleep(5)
+            continuous_calibrator.start()
 
+        
+        # Start web server if requested
+        if args.web_server:
+            web_thread = threading.Thread(
+                target=start_web_server, 
+                args=(args.web_port, logger),
+                daemon=True
+            )
+            web_thread.start()
+            logger.info(f"Web monitoring enabled on port {args.web_port}")
+        
+        logger.info("Waiting for data from Davis wind sensor...")
+        logger.info(f"Environmental data will be averaged and published every {args.reporting_interval} seconds")
+        
+        try:
+            # Update global status
+            global latest_data
+            latest_data["status"] = "connecting"
+            
+            # Main loop with automatic reconnection
+            while not done:
+                try:
+                    # Continuously read and process data as it arrives
+                    with wind_reader.serial_connection() as ser:
+                        logger.info("Connected to serial port, reading data continuously...")
+                        latest_data["status"] = "running"
+                        
+                        while not done:
+                            try:
+                                # Block waiting for a line of data
+                                line = ser.readline().decode('utf-8', errors='ignore')
+                                
+                                if line.strip():  # Only process non-empty lines
+                                    logger.debug(f"Raw serial data: {line.strip()}")
                                     
-                                    # Immediate debug measurements - Davis-specific data (for web interface)
-                                    # Published to node scope (local debugging data)
-                                    timestamp = datetime.now(timezone.utc)
-                                    plugin.publish("davis.wind.rps", wind_data['rotations_per_second'], 
-                                                 timestamp=timestamp,
-                                                 scope="node",
-                                                 meta={"sensor": "davis-anemometer-6410", 
-                                                       "units": "rps", 
-                                                       "description": "Wind sensor rotations per second",
-                                                       "missing": -9999.0})
-                                    plugin.publish("davis.wind.rpm.tops", wind_data['rpm_tops'], 
-                                                 timestamp=timestamp,
-                                                 scope="node",
-                                                 meta={"sensor": "davis-anemometer-6410",
-                                                       "units": "rpm", 
-                                                       "description": "Debounced RPM count",
-                                                       "missing": -9999.0})
-                                    plugin.publish("davis.wind.rpm.raw", wind_data['rpm_raw'], 
-                                                 timestamp=timestamp,
-                                                 scope="node",
-                                                 meta={"sensor": "davis-anemometer-6410",
-                                                       "units": "rpm", 
-                                                       "description": "Raw RPM count",
-                                                       "missing": -9999.0})
-                                    plugin.publish("davis.wind.pot.value", wind_data['pot_value'], 
-                                                 timestamp=timestamp,
-                                                 scope="node",
-                                                 meta={"sensor": "davis-anemometer-6410",
-                                                       "units": "counts", 
-                                                       "description": "Raw potentiometer value for direction",
-                                                       "missing": -9999})
-                                    plugin.publish("davis.wind.iteration", wind_data['iteration'], 
-                                                 timestamp=timestamp,
-                                                 scope="node",
-                                                 meta={"sensor": "davis-anemometer-6410",
-                                                       "units": "count", 
-                                                       "description": "Arduino iteration counter",
-                                                       "missing": -9999})
+                                    # Update global data for web server
+                                    latest_data["raw_line"] = line.strip()
+                                    latest_data["timestamp"] = datetime.now()
                                     
-                                    # Publish immediate sensor status as OK
-                                    plugin.publish("davis.wind.sensor_status", 1, 
-                                                 timestamp=timestamp,
-                                                 scope="node",
-                                                 meta={"sensor": "davis-anemometer-6410",
-                                                       "description": "Davis wind sensor status (0=error, 1=ok)",
-                                                       "missing": -1})
+                                    wind_data = wind_reader.parse_wind_data(line)
                                     
-                                    # Check if it's time to publish averaged environmental data
-                                    if data_collector.should_report():
-                                        averaged_data = data_collector.get_averaged_data()
-                                        if averaged_data:
-                                            # Publish averaged environmental measurements
-                                            # Published to beehive scope (environmental data for analysis)
-                                            env_timestamp = datetime.now(timezone.utc)
-                                            plugin.publish("env.wind.speed", averaged_data['avg_wind_speed_knots'], 
-                                                         timestamp=env_timestamp,
-                                                         scope="beehive",
-                                                         meta={"sensor": "davis-anemometer-6410",
-                                                               "units": "knots", 
-                                                               "description": "Average wind speed in knots", 
-                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
-                                                               "sample_count": str(averaged_data['sample_count']),
-                                                               "missing": -9999.0})
-                                            plugin.publish("env.wind.direction", averaged_data['avg_wind_direction_deg'], 
-                                                         timestamp=env_timestamp,
-                                                         scope="beehive",
-                                                         meta={"sensor": "davis-anemometer-6410",
-                                                               "units": "degrees", 
-                                                               "description": "Average wind direction in degrees", 
-                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
-                                                               "sample_count": str(averaged_data['sample_count']),
-                                                               "missing": -9999.0})
-                                            plugin.publish("env.wind.speed.mps", averaged_data['avg_wind_speed_mps'], 
-                                                         timestamp=env_timestamp,
-                                                         scope="beehive",
-                                                         meta={"sensor": "davis-anemometer-6410",
-                                                               "units": "m/s", 
-                                                               "description": "Average wind speed in meters per second", 
-                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
-                                                               "sample_count": str(averaged_data['sample_count']),
-                                                               "missing": -9999.0})
-                                            
-                                            # Wind speed min/max (lull and gust)
-                                            plugin.publish("env.wind.speed.min", averaged_data['min_wind_speed_knots'], 
-                                                         timestamp=env_timestamp,
-                                                         scope="beehive",
-                                                         meta={"sensor": "davis-anemometer-6410",
-                                                               "units": "knots", 
-                                                               "description": "Minimum wind speed (lull) during interval", 
-                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
-                                                               "sample_count": str(averaged_data['sample_count']),
-                                                               "missing": -9999.0})
-                                            plugin.publish("env.wind.speed.max", averaged_data['max_wind_speed_knots'], 
-                                                         timestamp=env_timestamp,
-                                                         scope="beehive",
-                                                         meta={"sensor": "davis-anemometer-6410",
-                                                               "units": "knots", 
-                                                               "description": "Maximum wind speed (gust) during interval", 
-                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
-                                                               "sample_count": str(averaged_data['sample_count']),
-                                                               "missing": -9999.0})
-                                            plugin.publish("env.wind.speed.min.mps", averaged_data['min_wind_speed_mps'], 
-                                                         timestamp=env_timestamp,
-                                                         scope="beehive",
-                                                         meta={"sensor": "davis-anemometer-6410",
-                                                               "units": "m/s", 
-                                                               "description": "Minimum wind speed (lull) in m/s during interval", 
-                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
-                                                               "sample_count": str(averaged_data['sample_count']),
-                                                               "missing": -9999.0})
-                                            plugin.publish("env.wind.speed.max.mps", averaged_data['max_wind_speed_mps'], 
-                                                         timestamp=env_timestamp,
-                                                         scope="beehive",
-                                                         meta={"sensor": "davis-anemometer-6410",
-                                                               "units": "m/s", 
-                                                               "description": "Maximum wind speed (gust) in m/s during interval", 
-                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
-                                                               "sample_count": str(averaged_data['sample_count']),
-                                                               "missing": -9999.0})
-                                            
-                                            # Additional averaged metrics
-                                            plugin.publish("env.wind.consistency", averaged_data['wind_consistency'], 
-                                                         timestamp=env_timestamp,
-                                                         scope="beehive",
-                                                         meta={"sensor": "davis-anemometer-6410",
-                                                               "units": "ratio", 
-                                                               "description": "Wind direction consistency (1.0=steady, 0.0=highly variable)", 
-                                                               "interval_seconds": str(averaged_data['interval_seconds']), 
-                                                               "sample_count": str(averaged_data['sample_count']),
-                                                               "missing": -9999.0})
-                                            
-                                            latest_data["last_mqtt_report"] = datetime.now()
-                                            latest_data["readings_since_report"] = 0
-                                            
-                                            # Get current Tempest data for comparison logging
-                                            current_tempest = get_current_tempest_wind()
-                                            
-                                            logger.info(f"Published averaged data: {averaged_data['avg_wind_speed_knots']:.2f} knots "
-                                                       f"(min: {averaged_data['min_wind_speed_knots']:.2f}, max: {averaged_data['max_wind_speed_knots']:.2f}), "
-                                                       f"{averaged_data['avg_wind_direction_deg']:.1f}° "
-                                                       f"(samples: {averaged_data['sample_count']}, consistency: {averaged_data['wind_consistency']:.3f})")
-                                            
-                                            # Log Tempest comparison data if available
-                                            if current_tempest:
-                                                logger.info(f"Tempest comparison data: {current_tempest['wind_speed_knots']:.2f} knots, "
-                                                           f"{current_tempest['wind_direction_deg']:.1f}° "
-                                                           f"(source: {current_tempest['source']}, "
-                                                           f"diff: speed={current_tempest['wind_speed_knots'] - averaged_data['avg_wind_speed_knots']:+.2f}kt, "
-                                                           f"direction={((current_tempest['wind_direction_deg'] - averaged_data['avg_wind_direction_deg'] + 180) % 360) - 180:+.1f}°)")
-                                            else:
-                                                logger.info("Tempest comparison data: Not available")
-                                            
-                                            # Reset collector for next interval
-                                            data_collector.reset_collection()
-                                            done = True
-                                    
-                                    # Log individual reading for debugging/monitoring
-                                    logger.debug(f"Reading: {wind_data['wind_speed_knots']:.2f} knots, "
-                                               f"{wind_data['wind_direction_deg']:.1f}° "
-                                               f"(samples in interval: {data_collector.sample_count})")
-                                    
-                                    if args.debug:
-                                        logger.debug(f"Debug - Iteration: {wind_data['iteration']}, "
-                                                    f"PotValue: {wind_data['pot_value']}, "
-                                                    f"RPM Tops: {wind_data['rpm_tops']}, "
-                                                    f"RPM Raw: {wind_data['rpm_raw']}, "
-                                                    f"RPS: {wind_data['rotations_per_second']:.3f}, "
-                                                    f"Speed (m/s): {wind_data['wind_speed_mps']:.2f}")
-                                else:
-                                    logger.debug(f"Could not parse line: {line.strip()}")
-                                    latest_data["error_count"] += 1
-                                    
-                        except serial.SerialTimeoutException:
-                            logger.debug("Serial read timeout, continuing...")
-                            continue
-                        except serial.SerialException as e:
-                            logger.error(f"Serial communication error: {e}")
-                            raise  # Re-raise to trigger reconnection
-                            
-            except (serial.SerialException, OSError) as e:
-                logger.error(f"Serial port error: {e}")
-                latest_data["status"] = "error"
-                latest_data["error_count"] += 1
-                
-                # Publish error status
-                error_timestamp = datetime.now(timezone.utc)
-                plugin.publish("davis.wind.sensor_status", 0, 
-                             timestamp=error_timestamp,
-                             scope="node",
-                             meta={"sensor": "davis-anemometer-6410",
-                                   "description": "Davis wind sensor status (0=error, 1=ok)",
-                                   "missing": -1})
-                logger.info("Attempting to reconnect in 5 seconds...")
-                latest_data["status"] = "reconnecting"
-                time.sleep(5.0)
-                continue
-                
-    except KeyboardInterrupt:
-        logger.info("Wind sensor plugin stopped by user")
-        if continuous_calibrator:
-            continuous_calibrator.stop()
-    except Exception as e:
-        logger.error(f"Unexpected error in wind sensor plugin: {e}")
-        if continuous_calibrator:
-            continuous_calibrator.stop()
-        raise
-    finally:
-        # Ensure continuous calibration is stopped on any exit
-        if continuous_calibrator:
-            continuous_calibrator.stop()
+                                    if wind_data:
+                                        # Update global data for web server (immediate/real-time)
+                                        latest_data["wind_data"] = wind_data
+                                        latest_data["total_readings"] += 1
+                                        latest_data["readings_since_report"] += 1
+                                        
+                                        # Add reading to data collector for averaging
+                                        data_collector.add_reading(wind_data)
+                                        
+                                        # Provide data to continuous calibrator if it's collecting samples
+                                        if continuous_calibrator and continuous_calibrator.is_collecting_samples():
+                                            continuous_calibrator.add_data_sample(wind_data)
+                                        
+
+                                        
+                                        # Immediate debug measurements - Davis-specific data (for web interface)
+                                        # Published to node scope (local debugging data)
+                                        timestamp = datetime.now(timezone.utc)
+                                        plugin.publish("davis.wind.rps", wind_data['rotations_per_second'], 
+                                                    timestamp=timestamp,
+                                                    scope="node",
+                                                    meta={"sensor": "davis-anemometer-6410", 
+                                                        "units": "rps", 
+                                                        "description": "Wind sensor rotations per second",
+                                                        "missing": -9999.0})
+                                        plugin.publish("davis.wind.rpm.tops", wind_data['rpm_tops'], 
+                                                    timestamp=timestamp,
+                                                    scope="node",
+                                                    meta={"sensor": "davis-anemometer-6410",
+                                                        "units": "rpm", 
+                                                        "description": "Debounced RPM count",
+                                                        "missing": -9999.0})
+                                        plugin.publish("davis.wind.rpm.raw", wind_data['rpm_raw'], 
+                                                    timestamp=timestamp,
+                                                    scope="node",
+                                                    meta={"sensor": "davis-anemometer-6410",
+                                                        "units": "rpm", 
+                                                        "description": "Raw RPM count",
+                                                        "missing": -9999.0})
+                                        plugin.publish("davis.wind.pot.value", wind_data['pot_value'], 
+                                                    timestamp=timestamp,
+                                                    scope="node",
+                                                    meta={"sensor": "davis-anemometer-6410",
+                                                        "units": "counts", 
+                                                        "description": "Raw potentiometer value for direction",
+                                                        "missing": -9999})
+                                        plugin.publish("davis.wind.iteration", wind_data['iteration'], 
+                                                    timestamp=timestamp,
+                                                    scope="node",
+                                                    meta={"sensor": "davis-anemometer-6410",
+                                                        "units": "count", 
+                                                        "description": "Arduino iteration counter",
+                                                        "missing": -9999})
+                                        
+                                        # Publish immediate sensor status as OK
+                                        plugin.publish("davis.wind.sensor_status", 1, 
+                                                    timestamp=timestamp,
+                                                    scope="node",
+                                                    meta={"sensor": "davis-anemometer-6410",
+                                                        "description": "Davis wind sensor status (0=error, 1=ok)",
+                                                        "missing": -1})
+                                        
+                                        # Check if it's time to publish averaged environmental data
+                                        if data_collector.should_report():
+                                            averaged_data = data_collector.get_averaged_data()
+                                            if averaged_data:
+                                                # Publish averaged environmental measurements
+                                                # Published to beehive scope (environmental data for analysis)
+                                                env_timestamp = datetime.now(timezone.utc)
+                                                plugin.publish("env.wind.speed", averaged_data['avg_wind_speed_knots'], 
+                                                            timestamp=env_timestamp,
+                                                            scope="beehive",
+                                                            meta={"sensor": "davis-anemometer-6410",
+                                                                "units": "knots", 
+                                                                "description": "Average wind speed in knots", 
+                                                                "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                                "sample_count": str(averaged_data['sample_count']),
+                                                                "missing": -9999.0})
+                                                plugin.publish("env.wind.direction", averaged_data['avg_wind_direction_deg'], 
+                                                            timestamp=env_timestamp,
+                                                            scope="beehive",
+                                                            meta={"sensor": "davis-anemometer-6410",
+                                                                "units": "degrees", 
+                                                                "description": "Average wind direction in degrees", 
+                                                                "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                                "sample_count": str(averaged_data['sample_count']),
+                                                                "missing": -9999.0})
+                                                plugin.publish("env.wind.speed.mps", averaged_data['avg_wind_speed_mps'], 
+                                                            timestamp=env_timestamp,
+                                                            scope="beehive",
+                                                            meta={"sensor": "davis-anemometer-6410",
+                                                                "units": "m/s", 
+                                                                "description": "Average wind speed in meters per second", 
+                                                                "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                                "sample_count": str(averaged_data['sample_count']),
+                                                                "missing": -9999.0})
+                                                
+                                                # Wind speed min/max (lull and gust)
+                                                plugin.publish("env.wind.speed.min", averaged_data['min_wind_speed_knots'], 
+                                                            timestamp=env_timestamp,
+                                                            scope="beehive",
+                                                            meta={"sensor": "davis-anemometer-6410",
+                                                                "units": "knots", 
+                                                                "description": "Minimum wind speed (lull) during interval", 
+                                                                "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                                "sample_count": str(averaged_data['sample_count']),
+                                                                "missing": -9999.0})
+                                                plugin.publish("env.wind.speed.max", averaged_data['max_wind_speed_knots'], 
+                                                            timestamp=env_timestamp,
+                                                            scope="beehive",
+                                                            meta={"sensor": "davis-anemometer-6410",
+                                                                "units": "knots", 
+                                                                "description": "Maximum wind speed (gust) during interval", 
+                                                                "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                                "sample_count": str(averaged_data['sample_count']),
+                                                                "missing": -9999.0})
+                                                plugin.publish("env.wind.speed.min.mps", averaged_data['min_wind_speed_mps'], 
+                                                            timestamp=env_timestamp,
+                                                            scope="beehive",
+                                                            meta={"sensor": "davis-anemometer-6410",
+                                                                "units": "m/s", 
+                                                                "description": "Minimum wind speed (lull) in m/s during interval", 
+                                                                "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                                "sample_count": str(averaged_data['sample_count']),
+                                                                "missing": -9999.0})
+                                                plugin.publish("env.wind.speed.max.mps", averaged_data['max_wind_speed_mps'], 
+                                                            timestamp=env_timestamp,
+                                                            scope="beehive",
+                                                            meta={"sensor": "davis-anemometer-6410",
+                                                                "units": "m/s", 
+                                                                "description": "Maximum wind speed (gust) in m/s during interval", 
+                                                                "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                                "sample_count": str(averaged_data['sample_count']),
+                                                                "missing": -9999.0})
+                                                
+                                                # Additional averaged metrics
+                                                plugin.publish("env.wind.consistency", averaged_data['wind_consistency'], 
+                                                            timestamp=env_timestamp,
+                                                            scope="beehive",
+                                                            meta={"sensor": "davis-anemometer-6410",
+                                                                "units": "ratio", 
+                                                                "description": "Wind direction consistency (1.0=steady, 0.0=highly variable)", 
+                                                                "interval_seconds": str(averaged_data['interval_seconds']), 
+                                                                "sample_count": str(averaged_data['sample_count']),
+                                                                "missing": -9999.0})
+                                                
+                                                latest_data["last_mqtt_report"] = datetime.now()
+                                                latest_data["readings_since_report"] = 0
+                                                
+                                                # Get current Tempest data for comparison logging
+                                                current_tempest = get_current_tempest_wind()
+                                                
+                                                logger.info(f"Published averaged data: {averaged_data['avg_wind_speed_knots']:.2f} knots "
+                                                        f"(min: {averaged_data['min_wind_speed_knots']:.2f}, max: {averaged_data['max_wind_speed_knots']:.2f}), "
+                                                        f"{averaged_data['avg_wind_direction_deg']:.1f}° "
+                                                        f"(samples: {averaged_data['sample_count']}, consistency: {averaged_data['wind_consistency']:.3f})")
+                                                
+                                                # Log Tempest comparison data if available
+                                                if current_tempest:
+                                                    logger.info(f"Tempest comparison data: {current_tempest['wind_speed_knots']:.2f} knots, "
+                                                            f"{current_tempest['wind_direction_deg']:.1f}° "
+                                                            f"(source: {current_tempest['source']}, "
+                                                            f"diff: speed={current_tempest['wind_speed_knots'] - averaged_data['avg_wind_speed_knots']:+.2f}kt, "
+                                                            f"direction={((current_tempest['wind_direction_deg'] - averaged_data['avg_wind_direction_deg'] + 180) % 360) - 180:+.1f}°)")
+                                                else:
+                                                    logger.info("Tempest comparison data: Not available")
+                                                
+                                                # Reset collector for next interval
+                                                data_collector.reset_collection()
+                                        
+                                        # Log individual reading for debugging/monitoring
+                                        logger.debug(f"Reading: {wind_data['wind_speed_knots']:.2f} knots, "
+                                                f"{wind_data['wind_direction_deg']:.1f}° "
+                                                f"(samples in interval: {data_collector.sample_count})")
+                                        
+                                        if args.debug:
+                                            logger.debug(f"Debug - Iteration: {wind_data['iteration']}, "
+                                                        f"PotValue: {wind_data['pot_value']}, "
+                                                        f"RPM Tops: {wind_data['rpm_tops']}, "
+                                                        f"RPM Raw: {wind_data['rpm_raw']}, "
+                                                        f"RPS: {wind_data['rotations_per_second']:.3f}, "
+                                                        f"Speed (m/s): {wind_data['wind_speed_mps']:.2f}")
+                                    else:
+                                        logger.debug(f"Could not parse line: {line.strip()}")
+                                        latest_data["error_count"] += 1
+                                        
+                            except serial.SerialTimeoutException:
+                                logger.debug("Serial read timeout, continuing...")
+                                continue
+                            except serial.SerialException as e:
+                                logger.error(f"Serial communication error: {e}")
+                                raise  # Re-raise to trigger reconnection
+                                
+                except (serial.SerialException, OSError) as e:
+                    logger.error(f"Serial port error: {e}")
+                    latest_data["status"] = "error"
+                    latest_data["error_count"] += 1
+                    
+                    # Publish error status
+                    error_timestamp = datetime.now(timezone.utc)
+                    plugin.publish("davis.wind.sensor_status", 0, 
+                                timestamp=error_timestamp,
+                                scope="node",
+                                meta={"sensor": "davis-anemometer-6410",
+                                    "description": "Davis wind sensor status (0=error, 1=ok)",
+                                    "missing": -1})
+                    logger.info("Attempting to reconnect in 5 seconds...")
+                    latest_data["status"] = "reconnecting"
+                    time.sleep(5.0)
+                    continue
+                    
+        except KeyboardInterrupt:
+            logger.info("Wind sensor plugin stopped by user")
+            if continuous_calibrator:
+                continuous_calibrator.stop()
+        except Exception as e:
+            logger.error(f"Unexpected error in wind sensor plugin: {e}")
+            if continuous_calibrator:
+                continuous_calibrator.stop()
+            raise
+        finally:
+            # Ensure continuous calibration is stopped on any exit
+            if continuous_calibrator:
+                continuous_calibrator.stop()
 
 
 if __name__ == "__main__":
