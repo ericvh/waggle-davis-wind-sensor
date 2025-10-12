@@ -1,0 +1,23 @@
+name: plugin-davis6410
+plugins:
+- name: plugin-davis6410
+  pluginSpec:
+    image: registry.sagecontinuum.org/ericvh/waggle-davis-wind-sensor:1.0.14
+    privileged: true
+    selector:
+      zone: core
+    args:
+    - --port 
+    - /host/dev/serial/by-id/usb-Seeed_Seeeduino_XIAO_C9C906D45030524E572E3120FF15183E-if00
+    - --calibration-factor 
+    - 8.9438
+    - --direction-offset 
+    - -94.43
+
+nodeTags: []
+nodes:
+  W017: true
+scienceRules:
+- "schedule(plugin-davis6410): True"
+successCriteria:
+- WallClock('1day')
