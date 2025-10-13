@@ -2106,7 +2106,6 @@ def main():
                                                 # Publish averaged environmental measurements
                                                 # Published to beehive scope (environmental data for analysis)
                                                 plugin.publish("env.wind.speed", averaged_data['avg_wind_speed_knots'], 
-                                                            scope="beehive",
                                                             meta={"sensor": "davis-anemometer-6410",
                                                                 "units": "knots", 
                                                                 "description": "Average wind speed in knots", 
@@ -2114,7 +2113,6 @@ def main():
                                                                 "sample_count": str(averaged_data['sample_count']),
                                                                 "missing": "-9999.0"})
                                                 plugin.publish("env.wind.direction", averaged_data['avg_wind_direction_deg'], 
-                                                            scope="beehive",
                                                             meta={"sensor": "davis-anemometer-6410",
                                                                 "units": "degrees", 
                                                                 "description": "Average wind direction in degrees", 
@@ -2122,7 +2120,6 @@ def main():
                                                                 "sample_count": str(averaged_data['sample_count']),
                                                                 "missing": "-9999.0"})
                                                 plugin.publish("env.wind.speed.mps", averaged_data['avg_wind_speed_mps'], 
-                                                            scope="beehive",
                                                             meta={"sensor": "davis-anemometer-6410",
                                                                 "units": "m/s", 
                                                                 "description": "Average wind speed in meters per second", 
@@ -2132,7 +2129,6 @@ def main():
                                                 
                                                 # Wind speed min/max (lull and gust)
                                                 plugin.publish("env.wind.speed.min", averaged_data['min_wind_speed_knots'], 
-                                                            scope="beehive",
                                                             meta={"sensor": "davis-anemometer-6410",
                                                                 "units": "knots", 
                                                                 "description": "Minimum wind speed (lull) during interval", 
@@ -2140,7 +2136,6 @@ def main():
                                                                 "sample_count": str(averaged_data['sample_count']),
                                                                 "missing": "-9999.0"})
                                                 plugin.publish("env.wind.speed.max", averaged_data['max_wind_speed_knots'], 
-                                                            scope="beehive",
                                                             meta={"sensor": "davis-anemometer-6410",
                                                                 "units": "knots", 
                                                                 "description": "Maximum wind speed (gust) during interval", 
@@ -2148,7 +2143,6 @@ def main():
                                                                 "sample_count": str(averaged_data['sample_count']),
                                                                 "missing": "-9999.0"})
                                                 plugin.publish("env.wind.speed.min.mps", averaged_data['min_wind_speed_mps'], 
-                                                            scope="beehive",
                                                             meta={"sensor": "davis-anemometer-6410",
                                                                 "units": "m/s", 
                                                                 "description": "Minimum wind speed (lull) in m/s during interval", 
@@ -2156,7 +2150,6 @@ def main():
                                                                 "sample_count": str(averaged_data['sample_count']),
                                                                 "missing": "-9999.0"})
                                                 plugin.publish("env.wind.speed.max.mps", averaged_data['max_wind_speed_mps'], 
-                                                            scope="beehive",
                                                             meta={"sensor": "davis-anemometer-6410",
                                                                 "units": "m/s", 
                                                                 "description": "Maximum wind speed (gust) in m/s during interval", 
@@ -2166,7 +2159,6 @@ def main():
                                                 
                                                 # Additional averaged metrics
                                                 plugin.publish("env.wind.consistency", averaged_data['wind_consistency'], 
-                                                            scope="beehive",
                                                             meta={"sensor": "davis-anemometer-6410",
                                                                 "units": "ratio", 
                                                                 "description": "Wind direction consistency (1.0=steady, 0.0=highly variable)", 
