@@ -16,6 +16,7 @@ import subprocess
 import platform
 import signal
 import atexit
+import struct
 from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -433,7 +434,97 @@ def tempest_udp_listener():
                 
     except Exception as e:
         logging.getLogger(__name__).error(f"Failed to start Tempest UDP listener: {e}")
+
+def tempest_tcp_listener(host, port):
+    """TCP listener thread for Tempest data with length-prefixed messages"""
+    def read_length_prefixed_message(sock):
+        """Read a length-prefixed JSON message from TCP socket"""
+        try:
+            # Read 4-byte length prefix (big-endian)
+            length_data = sock.recv(4)
+            if len(length_data) != 4:
+                return None
+            
+            message_length = struct.unpack('>I', length_data)[0]
+            
+            # Read the actual message
+            message_data = b''
+            while len(message_data) < message_length:
+                chunk = sock.recv(message_length - len(message_data))
+                if not chunk:
+                    return None  # Connection closed
+                message_data += chunk
+            
+            return message_data.decode('utf-8')
+        except Exception as e:
+            logging.getLogger(__name__).debug(f"Error reading length-prefixed message: {e}")
+            return None
+    
+    def process_message(msg_json):
+        """Process a JSON message - shared logic between UDP and TCP"""
+        try:
+            msg = json.loads(msg_json)
+            msg_type = msg.get("type", "unknown")
+        except json.JSONDecodeError:
+            return
         
+        # Store the raw message by type
+        with tempest_data_lock:
+            latest_tempest_raw_by_type[msg_type] = msg
+            
+            # If we have a parser for this type, also store parsed
+            parser = TEMPEST_PARSERS.get(msg_type)
+            if parser:
+                try:
+                    parsed_data = parser(msg)
+                    latest_tempest_parsed_by_type[msg_type] = {
+                        "type": msg_type,
+                        "data": parsed_data
+                    }
+                except Exception as e:
+                    # Skip parsing errors
+                    pass
+            else:
+                # If no parser, remove any stale parsed entry
+                if msg_type in latest_tempest_parsed_by_type:
+                    del latest_tempest_parsed_by_type[msg_type]
+    
+    while True:
+        sock = None
+        try:
+            # Create TCP socket and connect
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(30.0)  # 30 second timeout
+            logging.getLogger(__name__).info(f"Connecting to Tempest TCP server at {host}:{port}")
+            sock.connect((host, port))
+            logging.getLogger(__name__).info(f"Connected to Tempest TCP server at {host}:{port}")
+            
+            while True:
+                try:
+                    msg_json = read_length_prefixed_message(sock)
+                    if msg_json is None:
+                        break  # Connection lost, will reconnect
+                    
+                    process_message(msg_json)
+                    
+                except json.JSONDecodeError:
+                    # Skip non-JSON messages
+                    continue
+                except Exception as e:
+                    logging.getLogger(__name__).debug(f"TCP message processing error: {e}")
+                    break  # Connection lost, will reconnect
+                    
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Tempest TCP connection error: {e}")
+            if sock:
+                try:
+                    sock.close()
+                except:
+                    pass
+        
+        # Wait before reconnecting
+        logging.getLogger(__name__).info("Waiting 5 seconds before reconnecting to Tempest TCP server...")
+        time.sleep(5)
 
 # Wind speed conversion constants
 MPS_TO_KNOTS = 1.94384  # meters per second to knots conversion factor
@@ -557,6 +648,24 @@ def parse_args():
         action="store_true", 
         default=get_env_or_default("DAVIS_AUTO_CALIBRATE", False, bool),
         help="Run automatic Tempest calibration at startup using UDP broadcasts (env: DAVIS_AUTO_CALIBRATE)"
+    )
+    parser.add_argument(
+        "--tempest-use-tcp", 
+        action="store_true", 
+        default=get_env_or_default("DAVIS_TEMPEST_USE_TCP", True, bool),
+        help="Use TCP connection instead of UDP for Tempest data (default: True, env: DAVIS_TEMPEST_USE_TCP)"
+    )
+    parser.add_argument(
+        "--tempest-tcp-host", 
+        type=str, 
+        default=get_env_or_default("DAVIS_TEMPEST_TCP_HOST", "localhost"),
+        help="TCP host for Tempest connection (default: localhost, env: DAVIS_TEMPEST_TCP_HOST)"
+    )
+    parser.add_argument(
+        "--tempest-tcp-port", 
+        type=int, 
+        default=get_env_or_default("DAVIS_TEMPEST_TCP_PORT", 50222, int), 
+        help="TCP port for Tempest connection (default: 50222, env: DAVIS_TEMPEST_TCP_PORT)"
     )
     parser.add_argument(
         "--calibration-samples", 
@@ -1344,9 +1453,9 @@ def run_auto_calibration(args, logger):
     logger.info("🎯 Starting automatic Tempest calibration...")
     logger.info("=" * 50)
     
-    # Setup firewall if not disabled
+    # Setup firewall if not disabled (only relevant for UDP mode)
     firewall_manager = None
-    if not args.no_firewall:
+    if not args.tempest_use_tcp and not args.no_firewall:
         try:
             firewall_manager = FirewallManager()
             logger.info("Setting up firewall for Tempest UDP broadcasts...")
@@ -1356,18 +1465,27 @@ def run_auto_calibration(args, logger):
                 logger.info("✅ Firewall setup completed successfully")
         except Exception as e:
             logger.warning(f"Could not setup firewall: {e}")
+    elif args.tempest_use_tcp:
+        logger.info("Firewall setup skipped (TCP mode)")
     else:
         logger.info("Firewall setup skipped (--no-firewall specified)")
     
     logger.info("")
     
-    # Start UDP listener thread
-    logger.info("🌐 Starting Tempest UDP listener...")
-    udp_thread = threading.Thread(target=tempest_udp_listener, daemon=True)
-    udp_thread.start()
+    # Start Tempest listener thread (UDP or TCP based on args)
+    if args.tempest_use_tcp:
+        logger.info(f"🌐 Starting Tempest TCP listener to {args.tempest_tcp_host}:{args.tempest_tcp_port}...")
+        tempest_thread = threading.Thread(target=tempest_tcp_listener, args=(args.tempest_tcp_host, args.tempest_tcp_port), daemon=True)
+    else:
+        logger.info("🌐 Starting Tempest UDP listener...")
+        tempest_thread = threading.Thread(target=tempest_udp_listener, daemon=True)
+    tempest_thread.start()
     
     # Wait for initial Tempest data
-    logger.info("⏳ Waiting for Tempest UDP broadcasts...")
+    if args.tempest_use_tcp:
+        logger.info("⏳ Waiting for Tempest TCP connection...")
+    else:
+        logger.info("⏳ Waiting for Tempest UDP broadcasts...")
     tempest_found = False
     wait_start = time.time()
     wait_timeout = 30  # 30 seconds to detect Tempest
@@ -1983,19 +2101,28 @@ def main():
         if args.continuous_calibration:
             logger.info("🔄 Continuous calibration mode enabled")
             
-            # Start Tempest UDP listener for continuous calibration
-            if not args.no_firewall:
+            # Setup firewall for continuous calibration (only relevant for UDP mode)
+            if not args.tempest_use_tcp and not args.no_firewall:
                 firewall_manager_continuous = FirewallManager()
                 logger.info("Setting up firewall for continuous calibration Tempest UDP broadcasts...")
                 if not firewall_manager_continuous.setup_firewall():
                     logger.warning("⚠️  Firewall setup may be incomplete for continuous calibration")
                 else:
                     logger.info("✅ Firewall setup completed for continuous calibration")
+            elif args.tempest_use_tcp:
+                logger.info("Firewall setup skipped for continuous calibration (TCP mode)")
+            else:
+                logger.info("Firewall setup skipped for continuous calibration (--no-firewall specified)")
             
-            # Start UDP listener thread for continuous calibration
-            udp_thread_continuous = threading.Thread(target=tempest_udp_listener, daemon=True)
-            udp_thread_continuous.start()
-            logger.info("🌐 Started Tempest UDP listener for continuous calibration")
+            # Start Tempest listener thread for continuous calibration (UDP or TCP based on args)
+            if args.tempest_use_tcp:
+                tempest_thread_continuous = threading.Thread(target=tempest_tcp_listener, args=(args.tempest_tcp_host, args.tempest_tcp_port), daemon=True)
+                tempest_thread_continuous.start()
+                logger.info(f"🌐 Started Tempest TCP listener for continuous calibration to {args.tempest_tcp_host}:{args.tempest_tcp_port}")
+            else:
+                tempest_thread_continuous = threading.Thread(target=tempest_udp_listener, daemon=True)
+                tempest_thread_continuous.start()
+                logger.info("🌐 Started Tempest UDP listener for continuous calibration")
             
             # Initialize continuous calibrator
             continuous_calibrator = ContinuousCalibrator(wind_reader, args, logger)

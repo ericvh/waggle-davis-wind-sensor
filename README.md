@@ -18,7 +18,7 @@ A Waggle plugin that reads Davis wind sensor data from Arduino via USB serial po
   - Arduino iteration counter
 - **Data Averaging**: Configurable interval averaging with proper circular statistics for wind direction
 - **Min/Max Tracking**: Wind speed lull and gust measurements during each averaging interval
-- **Tempest Calibration**: UDP-based calibration using local Tempest weather station broadcasts
+- **Tempest Calibration**: TCP (default) and UDP-based calibration using local Tempest weather station data
 - **Dual-Mode Reporting**: Real-time debug data + averaged environmental measurements
 - **Continuous Data Processing**: Blocks waiting for new data instead of polling on intervals for maximum responsiveness
 - **Web Monitoring Interface**: Optional built-in web server with real-time dashboard and JSON API
@@ -152,20 +152,23 @@ python3 main.py --reporting-interval 10
 
 ## Tempest Weather Station Calibration
 
-The plugin includes a specialized calibration utility (`tempest.py`) that uses local Tempest weather station UDP broadcasts to calibrate your Davis wind sensor. This provides highly accurate calibration using professional-grade meteorological instruments with sub-second latency.
+The plugin includes a specialized calibration utility (`tempest.py`) that uses local Tempest weather station data to calibrate your Davis wind sensor. This provides highly accurate calibration using professional-grade meteorological instruments with sub-second latency.
 
 ### How It Works
 
-1. **Local UDP Reception**: Receives real-time broadcasts from your local Tempest weather station
+1. **Connection Options**: Supports both TCP (default) and UDP connections to Tempest data sources
+   - **TCP Mode (default)**: Connects to Tempest TCP server receiving length-prefixed JSON messages
+   - **UDP Mode**: Receives real-time UDP broadcasts from Tempest weather station
 2. **Interactive Comparison**: Enter your Davis readings and compare with simultaneous Tempest data  
 3. **Statistical Analysis**: Calculates optimal calibration factors with confidence metrics
 4. **Web Dashboard**: Optional browser-based interface for easier calibration sessions
 
 ### Prerequisites
 
-- **Local Tempest Station**: You need a Tempest weather station on your local network
-- **UDP Broadcasts**: Tempest must be configured to broadcast on UDP port 50222
-- **Network Access**: Calibration utility must be on same network as Tempest hub
+- **Local Tempest Station**: You need a Tempest weather station or compatible data source
+- **Network Access**: Plugin must be able to connect to Tempest data source
+- **TCP Mode (default)**: Tempest TCP server must be running on specified host/port (default: localhost:50222)
+- **UDP Mode**: Tempest must be configured to broadcast on UDP port 50222
 
 ### Usage Methods
 
@@ -321,17 +324,18 @@ sudo iptables -I INPUT -p udp --dport 50222 -j ACCEPT -m comment --comment tempe
 The Davis plugin can now run Tempest calibration automatically at startup using the `--auto-calibrate` flag:
 
 #### How It Works
-1. **Firewall Setup**: Automatically configures iptables rules for UDP reception
-2. **Tempest Detection**: Starts UDP listener and waits for Tempest broadcasts (30s timeout)
-3. **Data Collection**: Collects paired Davis + Tempest readings over specified interval
-4. **Calibration Calculation**: Computes speed factor and direction offset with confidence metrics
-5. **Automatic Application**: Applies calibration factors if confidence meets threshold
-6. **Fallback**: Uses manual values if auto-calibration fails or confidence too low
+1. **Connection Setup**: Connects to Tempest data source using TCP (default) or UDP mode
+2. **Firewall Setup**: Automatically configures iptables rules for UDP reception (UDP mode only)
+3. **Tempest Detection**: Starts listener and waits for Tempest data (30s timeout)
+4. **Data Collection**: Collects paired Davis + Tempest readings over specified interval
+5. **Calibration Calculation**: Computes speed factor and direction offset with confidence metrics
+6. **Automatic Application**: Applies calibration factors if confidence meets threshold
+7. **Fallback**: Uses manual values if auto-calibration fails or confidence too low
 
 #### Full Implementation
 The `--auto-calibrate` feature provides **complete automatic calibration**:
-- ✅ **Integrated UDP listener** for Tempest broadcasts
-- ✅ **Automatic firewall configuration** with root/sudo detection
+- ✅ **Integrated TCP/UDP listener** for Tempest data (TCP default, UDP optional)
+- ✅ **Automatic firewall configuration** with root/sudo detection (UDP mode only)
 - ✅ **Real-time data collection** from both Davis sensor and Tempest station
 - ✅ **Calibration factor calculation** with confidence assessment
 - ✅ **Automatic application** when confidence ≥ threshold (default: 0.7)
@@ -339,8 +343,16 @@ The `--auto-calibrate` feature provides **complete automatic calibration**:
 
 **Usage:**
 ```bash
-# Full automatic calibration with defaults (10 samples, 5s intervals)
+# Full automatic calibration with defaults (TCP mode, 10 samples, 5s intervals)
 python3 main.py --auto-calibrate
+
+# TCP mode with custom host/port
+python3 main.py --auto-calibrate \
+  --tempest-tcp-host tempest.local \
+  --tempest-tcp-port 50223
+
+# Use UDP mode instead of TCP (default)
+python3 main.py --auto-calibrate --tempest-use-tcp=false
 
 # Custom parameters
 python3 main.py --auto-calibrate \
@@ -348,7 +360,7 @@ python3 main.py --auto-calibrate \
   --calibration-interval 3 \
   --min-calibration-confidence 0.8
 
-# Skip firewall setup
+# Skip firewall setup (only relevant for UDP mode)
 python3 main.py --auto-calibrate --no-firewall
 ```
 
@@ -932,6 +944,9 @@ All command-line arguments can be configured using environment variables with th
 | Environment Variable | CLI Argument | Type | Default | Description |
 |---------------------|--------------|------|---------|-------------|
 | `DAVIS_AUTO_CALIBRATE` | `--auto-calibrate` | bool | `false` | Run automatic Tempest calibration at startup |
+| `DAVIS_TEMPEST_USE_TCP` | `--tempest-use-tcp` | bool | `true` | Use TCP connection instead of UDP for Tempest data |
+| `DAVIS_TEMPEST_TCP_HOST` | `--tempest-tcp-host` | string | `localhost` | TCP host for Tempest connection |
+| `DAVIS_TEMPEST_TCP_PORT` | `--tempest-tcp-port` | int | `50222` | TCP port for Tempest connection |
 | `DAVIS_CALIBRATION_SAMPLES` | `--calibration-samples` | int | `10` | Number of samples for auto-calibration |
 | `DAVIS_CALIBRATION_INTERVAL` | `--calibration-interval` | int | `5` | Seconds between calibration samples |
 | `DAVIS_CALIBRATION_TIMEOUT` | `--calibration-timeout` | int | `300` | Maximum calibration time in seconds |

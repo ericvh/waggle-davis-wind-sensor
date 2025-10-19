@@ -140,6 +140,16 @@
   - Enhanced metadata with sensor, units, description, missing, timestamp fields
   - Updated README.md and sage-generated.yaml with complete scope and metadata documentation
   - Fixed missing 'import sys' statement bug
+- [x] **TCP support for Tempest data connection (default mode)**
+  - Added --tempest-use-tcp argument (default: true) to use TCP instead of UDP for Tempest data
+  - Added --tempest-tcp-host and --tempest-tcp-port arguments for TCP connection configuration
+  - Implemented tempest_tcp_listener() function with length-prefixed message handling
+  - TCP mode uses 4-byte big-endian length prefix followed by JSON message payload
+  - Added automatic reconnection logic for TCP connections with 30-second timeout
+  - Updated both auto-calibration and continuous calibration to support TCP mode
+  - Firewall setup now only applies to UDP mode (skipped for TCP connections)
+  - Updated README.md with TCP configuration options and usage examples
+  - Added environment variables: DAVIS_TEMPEST_USE_TCP, DAVIS_TEMPEST_TCP_HOST, DAVIS_TEMPEST_TCP_PORT
 
 ## Testing and Validation 🧪
 - [ ] Test with actual Davis wind sensor and Arduino hardware
