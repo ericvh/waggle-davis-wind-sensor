@@ -2311,8 +2311,6 @@ def main():
                                                            f"(source: {current_tempest['source']}, "
                                                            f"diff: speed={current_tempest['wind_speed_knots'] - averaged_data['avg_wind_speed_knots']:+.2f}kt, "
                                                            f"direction={((current_tempest['wind_direction_deg'] - averaged_data['avg_wind_direction_deg'] + 180) % 360) - 180:+.1f}°)")
-                                                else:
-                                                   logger.info("Tempest comparison data: Not available")
                                                 
                                                 # Reset collector for next interval
                                                 data_collector.reset_collection()
