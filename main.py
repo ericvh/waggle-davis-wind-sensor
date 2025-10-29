@@ -615,8 +615,8 @@ def parse_args():
     parser.add_argument(
         "--direction-offset", 
         type=float, 
-        default=get_env_or_default("DAVIS_DIRECTION_OFFSET", -94.43, float), 
-        help="Wind direction offset in degrees (default: -94.43, env: DAVIS_DIRECTION_OFFSET)"
+        default=get_env_or_default("DAVIS_DIRECTION_OFFSET", 0, float), 
+        help="Wind direction offset in degrees (default: 0, env: DAVIS_DIRECTION_OFFSET)"
     )
     parser.add_argument(
         "--direction-scale", 
